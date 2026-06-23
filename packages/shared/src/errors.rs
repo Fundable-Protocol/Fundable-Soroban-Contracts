@@ -1,7 +1,6 @@
 //! Error types for the Fundable streaming protocol.
 //!
-//! Ported from Sablier's `Errors.sol` library. Each contract uses a single
-//! `#[contracterror]` enum so that error codes are compact and unique.
+//! Each contract uses a single `#[contracterror]` enum so that error codes are compact and unique.
 //!
 //! Soroban convention: error values are `u32` and should be stable across
 //! contract upgrades to avoid breaking client error handling.
@@ -13,48 +12,45 @@ use soroban_sdk::contracterror;
 // ---------------------------------------------------------------------------
 
 /// Errors emitted by the Flow streaming contract.
-///
-/// Maps to Sablier's `Errors.sol` — see inline comments for the original
-/// Solidity error name.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FlowError {
     // --- Stream existence & state ---
-    /// Stream ID does not exist. (SablierFlowState_Null)
+    /// Stream ID does not exist. 
     StreamNotFound = 1,
-    /// Caller is not authorized for this operation. (SablierFlowState_Unauthorized)
+    /// Caller is not authorized for this operation. 
     Unauthorized = 2,
-    /// Stream is paused; operation requires active streaming. (SablierFlowState_StreamPaused)
+    /// Stream is paused; operation requires active streaming. 
     StreamPaused = 3,
-    /// Stream is voided; no further mutations allowed. (SablierFlowState_StreamVoided)
+    /// Stream is voided; no further mutations allowed. 
     StreamVoided = 4,
-    /// Stream is not paused; restart requires a paused stream. (SablierFlow_StreamNotPaused)
+    /// Stream is not paused; restart requires a paused stream. 
     StreamNotPaused = 5,
-    /// Stream has not started yet (snapshot_time in the future). (SablierFlow_StreamPending)
+    /// Stream has not started yet (snapshot_time in the future). 
     StreamPending = 6,
 
     // --- Rate & amount validation ---
-    /// New rate per second must be > 0. (SablierFlow_NewRatePerSecondZero)
+    /// New rate per second must be > 0. 
     RatePerSecondZero = 7,
-    /// New rate must differ from current rate. (SablierFlow_RatePerSecondNotDifferent)
+    /// New rate must differ from current rate. 
     RateNotDifferent = 8,
-    /// Deposit amount must be > 0. (SablierFlow_DepositAmountZero)
+    /// Deposit amount must be > 0. 
     DepositAmountZero = 9,
-    /// Withdraw amount must be > 0. (SablierFlow_WithdrawAmountZero)
+    /// Withdraw amount must be > 0. 
     WithdrawAmountZero = 10,
-    /// Withdraw amount exceeds withdrawable balance. (SablierFlow_Overdraw)
+    /// Withdraw amount exceeds withdrawable balance. 
     Overdraw = 11,
-    /// Refund amount must be > 0. (SablierFlow_RefundAmountZero)
+    /// Refund amount must be > 0. 
     RefundAmountZero = 12,
-    /// Refund amount exceeds refundable balance. (SablierFlow_RefundOverflow)
+    /// Refund amount exceeds refundable balance. 
     RefundOverflow = 13,
 
     // --- Token validation ---
-    /// Token has > 18 decimals, unsupported. (SablierFlow_InvalidTokenDecimals)
+    /// Token has > 18 decimals, unsupported. 
     InvalidTokenDecimals = 14,
 
     // --- Balance ---
-    /// Stream balance is zero (e.g. querying depletion time). (SablierFlow_StreamBalanceZero)
+    /// Stream balance is zero (e.g. querying depletion time). 
     BalanceZero = 15,
 
     // --- Initialization ---
@@ -64,7 +60,7 @@ pub enum FlowError {
     NotInitialized = 17,
 
     // --- Create validation ---
-    /// Cannot create a pending stream with rate_per_second = 0. (SablierFlow_CreateRatePerSecondZero)
+    /// Cannot create a pending stream with rate_per_second = 0. 
     CreateRatePerSecondZero = 18,
 
     // --- Internal safety ---

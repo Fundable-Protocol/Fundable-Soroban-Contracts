@@ -1,7 +1,6 @@
 //! Fixed-point math helpers for the Fundable streaming protocol.
 //!
-//! Direct port of Sablier's `FlowHelpers.sol` library. All internal debt
-//! calculations use 18-decimal fixed-point arithmetic to avoid precision
+//! All internal debt calculations use 18-decimal fixed-point arithmetic to avoid precision
 //! loss when streaming tokens with few decimals (e.g. Stellar's 7-decimal SAC).
 //!
 //! # Scaling Strategy
@@ -40,7 +39,6 @@ pub const INTERNAL_DECIMALS: u32 = 18;
 /// // → 1_000_000_000_000_000_000 (1e18, i.e. 1 token in 18-dec)
 /// ```
 ///
-/// # Sablier Reference
 /// `FlowHelpers.scaleAmount(uint256 amount, uint8 decimals)`
 pub fn scale_amount(amount: i128, decimals: u32) -> i128 {
     if decimals == INTERNAL_DECIMALS {
@@ -68,7 +66,6 @@ pub fn scale_amount(amount: i128, decimals: u32) -> i128 {
 /// // → 1.5 tokens in 7-decimal representation
 /// ```
 ///
-/// # Sablier Reference
 /// `FlowHelpers.descaleAmount(uint256 amount, uint8 decimals)`
 pub fn descale_amount(amount: i128, decimals: u32) -> i128 {
     if decimals == INTERNAL_DECIMALS {

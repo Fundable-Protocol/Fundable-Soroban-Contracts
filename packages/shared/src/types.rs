@@ -1,8 +1,6 @@
 //! Shared data types for the Fundable streaming protocol.
 //!
 //! These types are used across the Flow, Lockup, Router, and Stream NFT contracts.
-//! Design is inspired by Sablier's `Flow.Stream` struct and `Flow.Status` enum,
-//! adapted for Soroban's type system and storage model.
 
 use soroban_sdk::{contracttype, Address};
 
@@ -12,18 +10,8 @@ use soroban_sdk::{contracttype, Address};
 
 /// Status of a Flow stream.
 ///
-/// Maps to Sablier's `Flow.Status` enum. The status is derived from the
-/// stream's current state (rate, balance, debt, voided flag) rather than
+/// The status is derived from the stream's current state (rate, balance, debt, voided flag) rather than
 /// being stored directly — keeping storage minimal.
-///
-/// | Sablier Status         | Fundable Equivalent     |
-/// |------------------------|-------------------------|
-/// | PENDING                | Pending                 |
-/// | STREAMING_SOLVENT      | StreamingSolvent        |
-/// | STREAMING_INSOLVENT    | StreamingInsolvent      |
-/// | PAUSED_SOLVENT         | PausedSolvent           |
-/// | PAUSED_INSOLVENT       | PausedInsolvent         |
-/// | VOIDED                 | Voided                  |
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamStatus {

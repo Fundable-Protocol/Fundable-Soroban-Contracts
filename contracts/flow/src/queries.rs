@@ -54,8 +54,6 @@ pub fn ongoing_debt_scaled_of(env: &Env, stream_id: u64) -> i128 {
 ///
 /// Returns 0 if the stream is already insolvent.
 /// Panics if the stream is paused or has zero balance.
-///
-/// Sablier reference: `depletionTimeOf()`
 pub fn depletion_time_of(env: &Env, stream_id: u64) -> u64 {
     let stream = require_stream(env, stream_id);
 
@@ -90,8 +88,6 @@ pub fn depletion_time_of(env: &Env, stream_id: u64) -> u64 {
 }
 
 /// Derive the stream status from its current state.
-///
-/// Sablier reference: `statusOf()`
 pub fn status_of(env: &Env, stream_id: u64) -> StreamStatus {
     let stream = require_stream(env, stream_id);
     let now = env.ledger().timestamp();

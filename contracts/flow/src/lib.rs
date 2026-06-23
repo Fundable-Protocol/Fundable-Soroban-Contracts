@@ -1,15 +1,11 @@
 //! Fundable Flow Contract — Open-ended rate-per-second token streaming.
 //!
-//! Inspired by Sablier Flow (SablierFlow.sol), adapted for Stellar/Soroban.
-//!
 //! # Overview
 //!
 //! Flow streams allow a sender to continuously stream tokens to a recipient
 //! at a configurable rate per second. The stream can be funded, paused,
 //! restarted, and rate-adjusted at any time. The sender can refund excess
 //! balance, and either party can permanently void the stream.
-//!
-//! # Key Differences from Sablier
 //!
 //! - No embedded ERC-721 NFT — ownership tracked via `recipient` field.
 //!   NFT receipts are handled by the separate `stream-nft` contract.

@@ -37,7 +37,7 @@ pub fn has_admin(env: &Env) -> bool {
 // Next Stream ID
 // ---------------------------------------------------------------------------
 
-/// Get the next stream ID. Starts at 1 (matching Sablier convention).
+/// Get the next stream ID. Starts at 1
 pub fn get_next_stream_id(env: &Env) -> u64 {
     env.storage()
         .instance()

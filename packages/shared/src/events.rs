@@ -14,8 +14,6 @@ use soroban_sdk::{Address, Env, Symbol};
 // ---------------------------------------------------------------------------
 
 /// Emit when a new Flow stream is created.
-///
-/// Sablier equivalent: `CreateFlowStream` event.
 pub fn emit_flow_created(
     env: &Env,
     stream_id: u64,
@@ -37,8 +35,6 @@ pub fn emit_flow_created(
 }
 
 /// Emit when tokens are deposited into a Flow stream.
-///
-/// Sablier equivalent: `DepositFlowStream` event.
 pub fn emit_flow_deposit(env: &Env, stream_id: u64, funder: &Address, amount: i128) {
     let topics = (Symbol::new(env, "flow_deposit"), stream_id);
     let data = (funder.clone(), amount);
@@ -46,8 +42,6 @@ pub fn emit_flow_deposit(env: &Env, stream_id: u64, funder: &Address, amount: i1
 }
 
 /// Emit when tokens are withdrawn from a Flow stream.
-///
-/// Sablier equivalent: `WithdrawFromFlowStream` event.
 pub fn emit_flow_withdraw(
     env: &Env,
     stream_id: u64,
@@ -61,8 +55,6 @@ pub fn emit_flow_withdraw(
 }
 
 /// Emit when a Flow stream is paused.
-///
-/// Sablier equivalent: `PauseFlowStream` event.
 pub fn emit_flow_paused(
     env: &Env,
     stream_id: u64,
@@ -76,8 +68,6 @@ pub fn emit_flow_paused(
 }
 
 /// Emit when a paused Flow stream is restarted.
-///
-/// Sablier equivalent: `RestartFlowStream` event.
 pub fn emit_flow_restarted(
     env: &Env,
     stream_id: u64,
@@ -90,8 +80,6 @@ pub fn emit_flow_restarted(
 }
 
 /// Emit when the rate per second of a Flow stream is adjusted.
-///
-/// Sablier equivalent: `AdjustFlowStream` event.
 pub fn emit_flow_adjusted(
     env: &Env,
     stream_id: u64,
@@ -105,8 +93,6 @@ pub fn emit_flow_adjusted(
 }
 
 /// Emit when excess balance is refunded from a Flow stream to the sender.
-///
-/// Sablier equivalent: `RefundFromFlowStream` event.
 pub fn emit_flow_refunded(env: &Env, stream_id: u64, sender: &Address, amount: i128) {
     let topics = (Symbol::new(env, "flow_refunded"), stream_id);
     let data = (sender.clone(), amount);
@@ -114,8 +100,6 @@ pub fn emit_flow_refunded(env: &Env, stream_id: u64, sender: &Address, amount: i
 }
 
 /// Emit when a Flow stream is permanently voided.
-///
-/// Sablier equivalent: `VoidFlowStream` event.
 pub fn emit_flow_voided(
     env: &Env,
     stream_id: u64,
