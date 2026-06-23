@@ -1,0 +1,29 @@
+# Rust
+target/
+
+# Soroban / Stellar local state
+.soroban/
+.stellar/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+*.wasm
+!contracts/**/wasm/*.wasm
+
+/docs
+
