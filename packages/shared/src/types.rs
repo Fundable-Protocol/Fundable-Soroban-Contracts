@@ -84,35 +84,111 @@ pub struct FlowStream {
 }
 
 // ---------------------------------------------------------------------------
-// Lockup Stream (stub for Phase 3)
+// Lockup Stream
 // ---------------------------------------------------------------------------
+
+/// Status of a Lockup stream.
+///
+/// Uses "temperature" semantics:
+/// - **Warm** (Pending, Streaming): time alone can change the status.
+/// - **Cold** (Settled, Canceled, Depleted): time alone cannot change the status.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum LockupStatus {
+    /// Created but start_time is in the future. No tokens have vested.
+    Pending = 0,
+    /// Active — tokens are currently vesting over time.
+    Streaming = 1,
+    /// All tokens have fully vested. Recipient can withdraw the remaining balance.
+    Settled = 2,
+    /// Sender canceled the stream. Unvested tokens returned to sender.
+    Canceled = 3,
+    /// Fully withdrawn (and/or refunded). No tokens remain in the stream.
+    Depleted = 4,
+}
 
 /// Core data structure for a Lockup (fixed-term vesting) stream.
 ///
-/// Simplified v1: linear unlock only (no cliff or dynamic curves).
-/// Will be expanded in Phase 3 implementation.
+/// Supports linear unlock with optional cliff. The vested ("streamed") amount
+/// at any time `t` is calculated as:
+///
+/// ```text
+/// if t < start_time:       vested = 0
+/// if t < cliff_time:       vested = start_unlock_amount
+/// if t >= end_time:         vested = total_amount
+/// else:
+///   elapsed = floor((t - cliff_time) / granularity) * granularity
+///   streamable_duration = end_time - cliff_time
+///   streamable_amount = total_amount - start_unlock_amount - cliff_unlock_amount
+///   vested = start_unlock_amount + cliff_unlock_amount + (elapsed * streamable_amount / streamable_duration)
+/// ```
+///
+/// This mirrors the reference linear lockup calculation with discrete unlock
+/// steps at `granularity`-second intervals.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct LockupStream {
-    /// The address that created and funded the lockup.
+    /// The address that created and funded the lockup (can cancel if `cancelable`).
     pub sender: Address,
-    /// The address that receives tokens as they unlock.
+    /// The address that receives tokens as they unlock (can withdraw).
     pub recipient: Address,
     /// The Soroban token contract address.
     pub token: Address,
-    /// Total amount locked (in token decimals).
+    /// Total amount deposited into the stream (in token decimals).
     pub total_amount: i128,
-    /// Amount already withdrawn by the recipient.
+    /// Cumulative amount withdrawn by the recipient.
     pub withdrawn_amount: i128,
-    /// Unix timestamp when the lockup begins unlocking.
+    /// Amount refunded to sender on cancellation. Zero unless cancelled.
+    pub refunded_amount: i128,
+    /// Unix timestamp when the lockup begins.
     pub start_time: u64,
     /// Unix timestamp when the lockup is fully unlocked.
     pub end_time: u64,
-    /// Optional cliff timestamp. No tokens unlock before this time.
-    /// Set to 0 for no cliff.
+    /// Optional cliff timestamp. No tokens beyond `start_unlock_amount`
+    /// vest before this time. Set to 0 for no cliff.
     pub cliff_time: u64,
+    /// Amount unlocked immediately at `start_time`.
+    pub start_unlock_amount: i128,
+    /// Amount unlocked at `cliff_time` (in addition to `start_unlock_amount`).
+    pub cliff_unlock_amount: i128,
+    /// Unlock granularity in seconds. Tokens vest in discrete steps of this
+    /// interval. Default = 1 (per-second vesting). Must be > 0.
+    pub granularity: u64,
     /// Whether the sender can cancel this stream and reclaim unvested tokens.
     pub cancelable: bool,
-    /// Whether this stream has been cancelled.
-    pub is_cancelled: bool,
+    /// Whether the stream has been cancelled.
+    pub was_canceled: bool,
+    /// Whether all tokens have been withdrawn and/or refunded.
+    pub is_depleted: bool,
+}
+
+/// Parameters for creating a new Lockup stream.
+///
+/// Bundled into a struct because Soroban contract functions
+/// have a max of 10 parameters.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CreateLockupParams {
+    /// Address funding the stream (can cancel if `cancelable`).
+    pub sender: Address,
+    /// Address receiving vested tokens.
+    pub recipient: Address,
+    /// Soroban token contract address.
+    pub token: Address,
+    /// Total tokens to vest (in token decimals).
+    pub total_amount: i128,
+    /// Unix timestamp when vesting begins.
+    pub start_time: u64,
+    /// Unix timestamp when vesting completes.
+    pub end_time: u64,
+    /// Optional cliff timestamp. Set to 0 for no cliff.
+    pub cliff_time: u64,
+    /// Tokens unlocked immediately at start.
+    pub start_unlock_amount: i128,
+    /// Tokens unlocked at cliff (added to start).
+    pub cliff_unlock_amount: i128,
+    /// Unlock step interval in seconds. 0 defaults to 1.
+    pub granularity: u64,
+    /// Whether the sender can cancel the stream.
+    pub cancelable: bool,
 }

@@ -119,3 +119,69 @@ pub fn emit_flow_voided(
     );
     env.events().publish(topics, data);
 }
+
+// ---------------------------------------------------------------------------
+// Lockup Events
+// ---------------------------------------------------------------------------
+
+/// Emit when a new Lockup stream is created.
+pub fn emit_lockup_created(
+    env: &Env,
+    stream_id: u64,
+    sender: &Address,
+    recipient: &Address,
+    token: &Address,
+    total_amount: i128,
+    start_time: u64,
+    end_time: u64,
+    cliff_time: u64,
+    cancelable: bool,
+) {
+    let topics = (Symbol::new(env, "lockup_created"), stream_id);
+    let data = (
+        sender.clone(),
+        recipient.clone(),
+        token.clone(),
+        total_amount,
+        (start_time, end_time, cliff_time, cancelable),
+    );
+    env.events().publish(topics, data);
+}
+
+/// Emit when tokens are withdrawn from a Lockup stream.
+pub fn emit_lockup_withdraw(
+    env: &Env,
+    stream_id: u64,
+    to: &Address,
+    caller: &Address,
+    amount: i128,
+) {
+    let topics = (Symbol::new(env, "lockup_withdraw"), stream_id);
+    let data = (to.clone(), caller.clone(), amount);
+    env.events().publish(topics, data);
+}
+
+/// Emit when a Lockup stream is canceled.
+pub fn emit_lockup_canceled(
+    env: &Env,
+    stream_id: u64,
+    sender: &Address,
+    recipient: &Address,
+    sender_amount: i128,
+    recipient_amount: i128,
+) {
+    let topics = (Symbol::new(env, "lockup_canceled"), stream_id);
+    let data = (
+        sender.clone(),
+        recipient.clone(),
+        sender_amount,
+        recipient_amount,
+    );
+    env.events().publish(topics, data);
+}
+
+/// Emit when a Lockup stream's cancelability is renounced.
+pub fn emit_lockup_renounced(env: &Env, stream_id: u64) {
+    let topics = (Symbol::new(env, "lockup_renounced"), stream_id);
+    env.events().publish(topics, ());
+}
