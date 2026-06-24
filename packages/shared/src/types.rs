@@ -30,6 +30,19 @@ pub enum StreamStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Stream Type
+// ---------------------------------------------------------------------------
+
+/// Type of stream (Flow or Lockup).
+/// Used by the Stream NFT and Router to route logic to the correct engine.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum StreamType {
+    Flow = 0,
+    Lockup = 1,
+}
+
+// ---------------------------------------------------------------------------
 // Flow Stream
 // ---------------------------------------------------------------------------
 

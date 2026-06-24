@@ -30,6 +30,20 @@ pub enum DataKey {
     /// Aggregate token balance held by the contract for a given token address.
     /// Used for surplus recovery / accounting reconciliation (Persistent storage).
     AggregateBalance(Address),
+    /// NFT token owner, keyed by token ID (Persistent storage).
+    TokenOwner(i128),
+    /// NFT stream data mapping token ID to stream type and ID (Persistent storage).
+    TokenStreamData(i128),
+    /// Number of NFTs owned by an address (Persistent storage).
+    NftBalance(Address),
+    /// Token metadata, e.g., name, symbol, URI (Instance storage).
+    TokenMetadata(soroban_sdk::Symbol),
+    /// Router configuration: Flow contract address.
+    FlowContract,
+    /// Router configuration: Lockup contract address.
+    LockupContract,
+    /// Router configuration: NFT contract address.
+    NftContract,
 }
 
 // ---------------------------------------------------------------------------

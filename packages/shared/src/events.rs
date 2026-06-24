@@ -185,3 +185,18 @@ pub fn emit_lockup_renounced(env: &Env, stream_id: u64) {
     let topics = (Symbol::new(env, "lockup_renounced"), stream_id);
     env.events().publish(topics, ());
 }
+
+// ---------------------------------------------------------------------------
+// NFT Events
+// ---------------------------------------------------------------------------
+
+/// Emit when an NFT is transferred (or minted/burned).
+pub fn emit_nft_transfer(
+    env: &Env,
+    from: &Address,
+    to: &Address,
+    token_id: i128,
+) {
+    let topics = (Symbol::new(env, "transfer"), from.clone(), to.clone());
+    env.events().publish(topics, token_id);
+}

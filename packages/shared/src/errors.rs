@@ -95,3 +95,33 @@ pub enum LockupError {
     /// Contract not yet initialized.
     NotInitialized = 109,
 }
+
+// ---------------------------------------------------------------------------
+// NFT Errors
+// ---------------------------------------------------------------------------
+
+/// Errors specific to the Stream NFT contract.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum NftError {
+    AlreadyInitialized = 201,
+    NotAuthorized = 202,
+    TokenNotFound = 203,
+    NotTransferable = 204,
+}
+
+// ---------------------------------------------------------------------------
+// Router Errors
+// ---------------------------------------------------------------------------
+
+/// Errors specific to the Router contract.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum RouterError {
+    AlreadyInitialized = 301,
+    NotInitialized = 302,
+    NotAuthorized = 303,
+    InvalidStreamType = 304,
+}

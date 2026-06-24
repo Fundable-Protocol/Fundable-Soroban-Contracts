@@ -1034,7 +1034,11 @@ dependencies = [
 name = "router"
 version = "0.0.0"
 dependencies = [
+ "flow",
+ "lockup",
+ "shared",
  "soroban-sdk",
+ "stream-nft",
 ]
 
 [[package]]
@@ -1468,6 +1472,7 @@ dependencies = [
 name = "stream-nft"
 version = "0.0.0"
 dependencies = [
+ "shared",
  "soroban-sdk",
 ]
 
