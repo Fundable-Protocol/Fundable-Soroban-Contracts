@@ -135,3 +135,24 @@ pub enum RouterError {
     NotAuthorized = 303,
     InvalidStreamType = 304,
 }
+
+// ---------------------------------------------------------------------------
+// Paymaster Errors
+// ---------------------------------------------------------------------------
+
+/// Errors specific to the Paymaster (FeeForwarder) contract.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum PaymasterError {
+    /// Contract already initialized.
+    AlreadyInitialized = 401,
+    /// Contract not yet initialized.
+    NotInitialized = 402,
+    /// Caller is not the admin.
+    NotAuthorized = 403,
+    /// The provided fee token is not in the allowed list.
+    TokenNotAllowed = 404,
+    /// Fee amount must be > 0.
+    FeeAmountZero = 405,
+}

@@ -217,3 +217,31 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
     env.events().publish(topics, (old_admin.clone(), new_admin.clone()));
 }
 
+// ---------------------------------------------------------------------------
+// Paymaster Events
+// ---------------------------------------------------------------------------
+
+/// Emit when a fee is collected by the Paymaster.
+pub fn emit_fee_collected(
+    env: &Env,
+    user: &Address,
+    relayer: &Address,
+    fee_token: &Address,
+    amount: i128,
+) {
+    let topics = (Symbol::new(env, "fee_collected"),);
+    let data = (user.clone(), relayer.clone(), fee_token.clone(), amount);
+    env.events().publish(topics, data);
+}
+
+/// Emit when the Paymaster forwards an invocation to a target contract.
+pub fn emit_invocation_forwarded(
+    env: &Env,
+    user: &Address,
+    target_contract: &Address,
+    function_name: &Symbol,
+) {
+    let topics = (Symbol::new(env, "invocation_forwarded"),);
+    let data = (user.clone(), target_contract.clone(), function_name.clone());
+    env.events().publish(topics, data);
+}

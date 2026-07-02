@@ -44,6 +44,8 @@ pub enum DataKey {
     LockupContract,
     /// Router configuration: NFT contract address.
     NftContract,
+    /// Paymaster configuration: list of allowed fee token addresses.
+    AllowedFeeTokens,
 }
 
 // ---------------------------------------------------------------------------
