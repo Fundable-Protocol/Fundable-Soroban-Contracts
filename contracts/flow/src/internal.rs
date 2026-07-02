@@ -123,6 +123,16 @@ pub fn create(
         panic_with_error!(env, FlowError::InvalidTokenDecimals);
     }
 
+    // Validate: sender and recipient must differ (H-1)
+    if sender == recipient {
+        panic_with_error!(env, FlowError::SenderEqualsRecipient);
+    }
+
+    // Validate: rate must not be negative (H-4)
+    if rate_per_second < 0 {
+        panic_with_error!(env, FlowError::NegativeRate);
+    }
+
     let now = env.ledger().timestamp();
 
     // If start_time is in the future, rate must be > 0 (can't create a pending paused stream)
@@ -248,9 +258,14 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     // Update stream balance
     stream.balance -= amount;
 
-    // Update aggregate balance
+    // Update aggregate balance (L-6: descriptive error)
     let agg = storage::get_aggregate_balance(env, &stream.token);
-    storage::set_aggregate_balance(env, &stream.token, agg - amount);
+    storage::set_aggregate_balance(
+        env,
+        &stream.token,
+        agg.checked_sub(amount)
+            .expect("aggregate balance underflow on withdraw"),
+    );
 
     storage::set_stream(env, stream_id, &stream);
 
@@ -313,6 +328,11 @@ pub fn pause(env: &Env, stream_id: u64) {
     let now = env.ledger().timestamp();
     if stream.snapshot_time > now {
         panic_with_error!(env, FlowError::StreamPending);
+    }
+
+    // Defense-in-depth: cannot pause a voided stream (H-3)
+    if stream.is_voided {
+        panic_with_error!(env, FlowError::StreamVoided);
     }
 
     // Use adjust_rate to snapshot debt and set rate to 0
@@ -382,9 +402,14 @@ pub fn refund(env: &Env, stream_id: u64, amount: i128) {
     // Update balance
     stream.balance -= amount;
 
-    // Update aggregate
+    // Update aggregate (L-6: descriptive error)
     let agg = storage::get_aggregate_balance(env, &token_addr);
-    storage::set_aggregate_balance(env, &token_addr, agg - amount);
+    storage::set_aggregate_balance(
+        env,
+        &token_addr,
+        agg.checked_sub(amount)
+            .expect("aggregate balance underflow on refund"),
+    );
 
     storage::set_stream(env, stream_id, &stream);
 

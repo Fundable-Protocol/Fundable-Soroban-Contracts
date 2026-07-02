@@ -26,6 +26,7 @@
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
 use shared::errors::FlowError;
+use shared::events;
 use shared::types::{FlowStream, StreamStatus};
 
 mod internal;
@@ -58,6 +59,7 @@ impl FlowContract {
         }
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
+        events::emit_admin_initialized(&env, &admin);
     }
 
     /// Upgrade the contract WASM bytecode.
@@ -78,6 +80,7 @@ impl FlowContract {
         admin.require_auth();
         storage::set_admin(&env, &new_admin);
         storage::extend_instance_ttl(&env);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
     // -----------------------------------------------------------------------
@@ -203,6 +206,9 @@ impl FlowContract {
         if sender != stream.sender {
             panic_with_error!(&env, FlowError::Unauthorized);
         }
+        if stream.is_voided {
+            panic_with_error!(&env, FlowError::StreamVoided);
+        }
         if stream.rate_per_second == 0 {
             panic_with_error!(&env, FlowError::StreamPaused);
         }
@@ -236,11 +242,11 @@ impl FlowContract {
         if sender != stream.sender {
             panic_with_error!(&env, FlowError::Unauthorized);
         }
-        if stream.rate_per_second == 0 {
-            panic_with_error!(&env, FlowError::StreamPaused);
-        }
         if stream.is_voided {
             panic_with_error!(&env, FlowError::StreamVoided);
+        }
+        if stream.rate_per_second == 0 {
+            panic_with_error!(&env, FlowError::StreamPaused);
         }
         if new_rate <= 0 {
             panic_with_error!(&env, FlowError::RatePerSecondZero);

@@ -27,6 +27,7 @@
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
 use shared::errors::LockupError;
+use shared::events;
 use shared::types::{CreateLockupParams, LockupStatus, LockupStream};
 
 mod internal;
@@ -59,6 +60,7 @@ impl LockupContract {
         }
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
+        events::emit_admin_initialized(&env, &admin);
     }
 
     /// Upgrade the contract WASM bytecode.
@@ -79,6 +81,7 @@ impl LockupContract {
         admin.require_auth();
         storage::set_admin(&env, &new_admin);
         storage::extend_instance_ttl(&env);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
     // -----------------------------------------------------------------------

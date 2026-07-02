@@ -66,6 +66,12 @@ pub enum FlowError {
     // --- Internal safety ---
     /// Internal math error — should never occur in production.
     InvalidCalculation = 19,
+
+    // --- Create validation (H-1, H-4) ---
+    /// Sender and recipient must be different addresses.
+    SenderEqualsRecipient = 20,
+    /// Rate per second must not be negative.
+    NegativeRate = 21,
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +100,8 @@ pub enum LockupError {
     AlreadyInitialized = 108,
     /// Contract not yet initialized.
     NotInitialized = 109,
+    /// Sender and recipient must be different addresses.
+    SenderEqualsRecipient = 110,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +117,8 @@ pub enum NftError {
     NotAuthorized = 202,
     TokenNotFound = 203,
     NotTransferable = 204,
+    /// Token ID has already been minted.
+    AlreadyMinted = 205,
 }
 
 // ---------------------------------------------------------------------------

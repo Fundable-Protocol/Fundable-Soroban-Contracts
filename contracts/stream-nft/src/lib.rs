@@ -62,7 +62,7 @@ impl StreamNftContract {
 
         let owner_key = DataKey::TokenOwner(token_id);
         if env.storage().persistent().has(&owner_key) {
-            panic!("Token already minted");
+            panic_with_error!(&env, NftError::AlreadyMinted);
         }
 
         // Set owner
@@ -296,4 +296,5 @@ impl StreamNftContract {
     }
 }
 
+#[cfg(test)]
 mod test;

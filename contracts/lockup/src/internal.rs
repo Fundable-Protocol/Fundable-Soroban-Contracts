@@ -104,7 +104,7 @@ pub fn streamed_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 
     // Safety: clamp to total_amount to avoid overshoot from rounding.
     if vested > stream.total_amount {
-        return stream.withdrawn_amount;
+        return stream.total_amount;
     }
 
     vested
@@ -140,6 +140,11 @@ pub fn refundable_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 /// Validates inputs, transfers tokens from sender to the contract, stores the
 /// stream record, and emits the creation event.
 pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
+    // Validate: sender and recipient must differ (H-1)
+    if params.sender == params.recipient {
+        panic_with_error!(env, LockupError::SenderEqualsRecipient);
+    }
+
     // Validate: total amount > 0
     if params.total_amount <= 0 {
         panic_with_error!(env, LockupError::AmountZero);
@@ -194,21 +199,21 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     };
     storage::set_stream(env, stream_id, &stream);
 
-    // Transfer tokens from sender into the contract (fully pre-funded)
-    let token_client = token::Client::new(env, &params.token);
-    token_client.transfer(
-        &params.sender,
-        &env.current_contract_address(),
-        &params.total_amount,
-    );
-
-    // Update aggregate balance
+    // Update aggregate balance (before external call — CEI pattern)
     let agg = storage::get_aggregate_balance(env, &params.token);
     storage::set_aggregate_balance(
         env,
         &params.token,
         agg.checked_add(params.total_amount)
             .expect("aggregate overflow"),
+    );
+
+    // Transfer tokens from sender into the contract (fully pre-funded)
+    let token_client = token::Client::new(env, &params.token);
+    token_client.transfer(
+        &params.sender,
+        &env.current_contract_address(),
+        &params.total_amount,
     );
 
     // Emit event
@@ -270,9 +275,14 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     let token_addr = stream.token.clone();
     storage::set_stream(env, stream_id, &stream);
 
-    // Update aggregate balance
+    // Update aggregate balance (L-6: descriptive error)
     let agg = storage::get_aggregate_balance(env, &token_addr);
-    storage::set_aggregate_balance(env, &token_addr, agg - amount);
+    storage::set_aggregate_balance(
+        env,
+        &token_addr,
+        agg.checked_sub(amount)
+            .expect("aggregate balance underflow on withdraw"),
+    );
 
     // Transfer tokens to recipient
     let token_client = token::Client::new(env, &token_addr);
@@ -310,8 +320,10 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
     // Sender gets back unvested tokens
     let sender_amount = stream.total_amount - streamed;
 
-    // Recipient gets vested minus already withdrawn
-    let recipient_amount = streamed - stream.withdrawn_amount;
+    // Recipient gets vested minus already withdrawn (M-6: checked subtraction)
+    let recipient_amount = streamed
+        .checked_sub(stream.withdrawn_amount)
+        .expect("recipient amount underflow: withdrawn exceeds streamed");
 
     // Mark as canceled
     stream.was_canceled = true;
@@ -329,9 +341,14 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
 
     storage::set_stream(env, stream_id, &stream);
 
-    // Update aggregate balance
+    // Update aggregate balance (L-6: descriptive error)
     let agg = storage::get_aggregate_balance(env, &token_addr);
-    storage::set_aggregate_balance(env, &token_addr, agg - sender_amount);
+    storage::set_aggregate_balance(
+        env,
+        &token_addr,
+        agg.checked_sub(sender_amount)
+            .expect("aggregate balance underflow on cancel"),
+    );
 
     // Refund unvested tokens to sender
     if sender_amount > 0 {

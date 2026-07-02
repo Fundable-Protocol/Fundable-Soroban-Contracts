@@ -200,3 +200,20 @@ pub fn emit_nft_transfer(
     let topics = (Symbol::new(env, "transfer"), from.clone(), to.clone());
     env.events().publish(topics, token_id);
 }
+
+// ---------------------------------------------------------------------------
+// Admin Events
+// ---------------------------------------------------------------------------
+
+/// Emit when a contract admin is initialized.
+pub fn emit_admin_initialized(env: &Env, admin: &Address) {
+    let topics = (Symbol::new(env, "admin_initialized"),);
+    env.events().publish(topics, admin.clone());
+}
+
+/// Emit when admin rights are transferred.
+pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
+    let topics = (Symbol::new(env, "admin_transferred"),);
+    env.events().publish(topics, (old_admin.clone(), new_admin.clone()));
+}
+

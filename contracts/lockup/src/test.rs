@@ -924,3 +924,70 @@ fn test_full_lifecycle() {
     assert_eq!(withdrawn, 95 * ONE_TOKEN); // 100 - 5 already withdrawn
     assert_eq!(client.status_of(&stream_id), LockupStatus::Depleted);
 }
+
+// ---------------------------------------------------------------------------
+// Edge Cases & Error Tests
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #110)")] // SenderEqualsRecipient
+fn test_create_sender_equals_recipient() {
+    let (env, contract_id, sender, _recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: sender.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #107)")] // AmountZero
+fn test_create_zero_amount() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 0,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #106)")] // InvalidTimeRange
+fn test_create_invalid_time_range() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 2000, // Start after end
+        end_time: 1000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}

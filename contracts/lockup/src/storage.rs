@@ -82,7 +82,14 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<LockupStream> {
 /// Get the aggregate balance held for a specific token.
 pub fn get_aggregate_balance(env: &Env, token: &Address) -> i128 {
     let key = DataKey::AggregateBalance(token.clone());
-    env.storage().persistent().get(&key).unwrap_or(0i128)
+    let result = env.storage().persistent().get(&key).unwrap_or(0i128);
+    if result != 0 {
+        // Extend TTL on read to prevent archival (M-1)
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_LEDGERS);
+    }
+    result
 }
 
 /// Set the aggregate balance for a specific token.

@@ -844,3 +844,160 @@ fn test_full_lifecycle() {
     client.void_stream(&stream_id, &sender);
     assert_eq!(client.status_of(&stream_id), StreamStatus::Voided);
 }
+
+// ---------------------------------------------------------------------------
+// Edge Cases & Error Tests
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")] // SenderEqualsRecipient
+fn test_create_sender_equals_recipient() {
+    let (env, contract_id, sender, _recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    client.create(&sender, &sender, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #14)")] // InvalidTokenDecimals
+fn test_create_invalid_decimals() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &19u32, &0u64);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")] // NegativeRate
+fn test_create_negative_rate() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    client.create(&sender, &recipient, &token, &-1i128, &TOKEN_DECIMALS, &0u64);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #18)")] // CreateRatePerSecondZero
+fn test_create_pending_with_zero_rate() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    client.create(&sender, &recipient, &token, &0i128, &TOKEN_DECIMALS, &2000u64);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")] // WithdrawAmountZero
+fn test_withdraw_zero_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(100 * ONE_TOKEN));
+    client.withdraw(&stream_id, &recipient, &recipient, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // StreamPaused
+fn test_pause_already_paused_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.pause(&stream_id, &sender);
+    client.pause(&stream_id, &sender); // Should fail
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")] // StreamPending
+fn test_pause_pending_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &2000u64);
+    client.pause(&stream_id, &sender);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")] // StreamVoided
+fn test_pause_voided_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.void_stream(&stream_id, &sender);
+    client.pause(&stream_id, &sender);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")] // Unauthorized
+fn test_pause_unauthorized() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.pause(&stream_id, &recipient);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")] // StreamNotPaused
+fn test_restart_not_paused_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.restart(&stream_id, &sender, &RATE_1_PER_SEC);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")] // StreamVoided
+fn test_restart_voided_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.void_stream(&stream_id, &sender);
+    client.restart(&stream_id, &sender, &RATE_1_PER_SEC);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")] // RatePerSecondZero
+fn test_restart_zero_rate_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.pause(&stream_id, &sender);
+    client.restart(&stream_id, &sender, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // RateNotDifferent
+fn test_adjust_rate_same_rate_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.adjust_rate(&stream_id, &sender, &RATE_1_PER_SEC);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")] // RatePerSecondZero
+fn test_adjust_rate_zero_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.adjust_rate(&stream_id, &sender, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")] // RefundAmountZero
+fn test_refund_zero_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(100 * ONE_TOKEN));
+    client.refund(&stream_id, &sender, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #15)")] // BalanceZero
+fn test_depletion_time_zero_balance_fails() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.depletion_time_of(&stream_id);
+}
+
+#[test]
+fn test_depletion_time_calculation() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(10 * ONE_TOKEN));
+    let dt = client.depletion_time_of(&stream_id);
+    assert!(dt > 1000);
+}
