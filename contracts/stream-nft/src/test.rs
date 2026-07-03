@@ -4,7 +4,7 @@ use super::*;
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 fn create_contract(env: &Env) -> (Address, StreamNftContractClient) {
-    let contract_id = env.register_contract(None, StreamNftContract);
+    let contract_id = env.register(StreamNftContract, ());
     let client = StreamNftContractClient::new(env, &contract_id);
     (contract_id, client)
 }

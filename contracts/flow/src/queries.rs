@@ -45,6 +45,7 @@ pub fn refundable_amount_of(env: &Env, stream_id: u64) -> i128 {
 }
 
 /// Returns the ongoing debt since last snapshot, in 18-decimal fixed-point.
+#[allow(unused)]
 pub fn ongoing_debt_scaled_of(env: &Env, stream_id: u64) -> i128 {
     let stream = require_stream(env, stream_id);
     internal::ongoing_debt_scaled_of(env, &stream)

@@ -2,7 +2,6 @@
 
 use super::*;
 use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env, String};
-use shared::types::StreamType;
 
 // Import the actual contract types to register them in tests
 use flow::FlowContract;
@@ -16,7 +15,7 @@ fn test_initialize() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let router_id = env.register_contract(None, RouterContract);
+    let router_id = env.register(RouterContract, ());
     let client = RouterContractClient::new(&env, &router_id);
 
     let admin = Address::generate(&env);
@@ -35,7 +34,7 @@ fn test_initialize_twice_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let router_id = env.register_contract(None, RouterContract);
+    let router_id = env.register(RouterContract, ());
     let client = RouterContractClient::new(&env, &router_id);
 
     let admin = Address::generate(&env);
@@ -54,15 +53,16 @@ fn test_end_to_end_flow_stream() {
 
     // 1. Deploy token
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
     // 2. Deploy core contracts
-    let flow_id = env.register_contract(None, FlowContract);
-    let lockup_id = env.register_contract(None, LockupContract);
-    let nft_id = env.register_contract(None, StreamNftContract);
-    let router_id = env.register_contract(None, RouterContract);
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
 
     // Initialize core contracts
     let admin = Address::generate(&env);
@@ -153,15 +153,16 @@ fn test_end_to_end_lockup_stream() {
 
     // 1. Deploy token
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
     // 2. Deploy core contracts
-    let flow_id = env.register_contract(None, FlowContract);
-    let lockup_id = env.register_contract(None, LockupContract);
-    let nft_id = env.register_contract(None, StreamNftContract);
-    let router_id = env.register_contract(None, RouterContract);
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
 
     // Initialize core contracts
     let admin = Address::generate(&env);
@@ -247,14 +248,15 @@ fn test_withdraw_fails_if_not_nft_owner() {
 
     // 1. Deploy token
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
     // 2. Deploy core contracts
-    let flow_id = env.register_contract(None, FlowContract);
-    let lockup_id = env.register_contract(None, LockupContract);
-    let nft_id = env.register_contract(None, StreamNftContract);
-    let router_id = env.register_contract(None, RouterContract);
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
 
     // Initialize core contracts
     let admin = Address::generate(&env);
@@ -321,14 +323,15 @@ fn test_withdraw_after_nft_transfer() {
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
-    let token_id = env.register_stellar_asset_contract(token_admin.clone());
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
-    let flow_id = env.register_contract(None, FlowContract);
-    let lockup_id = env.register_contract(None, LockupContract);
-    let nft_id = env.register_contract(None, StreamNftContract);
-    let router_id = env.register_contract(None, RouterContract);
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
 
     let admin = Address::generate(&env);
     flow_client::Client::new(&env, &flow_id).initialize(&admin);

@@ -78,6 +78,7 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<FlowStream> {
 }
 
 /// Check if a stream exists.
+#[allow(unused)]
 pub fn has_stream(env: &Env, stream_id: u64) -> bool {
     env.storage()
         .persistent()
