@@ -399,3 +399,59 @@ fn test_withdraw_after_nft_transfer() {
     assert_eq!(token_client.balance(&new_owner), 10 * decimals as i128);
 }
 
+#[test]
+fn test_upgrade() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
+
+    let admin = Address::generate(&env);
+    let router_client = RouterContractClient::new(&env, &router_id);
+    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
+
+    // Use a valid WASM from our imports to test upgrading
+    let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
+    router_client.upgrade(&new_wasm_hash);
+    
+    // Check that admin authorization was requested
+    let auths = env.auths();
+    assert!(auths.len() > 0);
+    assert_eq!(auths[0].0, admin);
+}
+
+#[test]
+fn test_upgrade_nft() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let flow_id = env.register(FlowContract, ());
+    let lockup_id = env.register(LockupContract, ());
+    let nft_id = env.register(StreamNftContract, ());
+    let router_id = env.register(RouterContract, ());
+
+    let admin = Address::generate(&env);
+    
+    // Initialize NFT with Router as admin
+    nft_client::Client::new(&env, &nft_id).initialize(
+        &router_id,
+        &String::from_str(&env, "Fundable Stream NFT"),
+        &String::from_str(&env, "FSNFT"),
+    );
+
+    let router_client = RouterContractClient::new(&env, &router_id);
+    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
+
+    // Use a valid WASM from our imports to test upgrading
+    let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
+    router_client.upgrade_nft(&new_wasm_hash);
+    
+    // Check that admin authorization was requested
+    let auths = env.auths();
+    assert!(auths.len() > 0);
+    assert_eq!(auths[0].0, admin);
+}
+

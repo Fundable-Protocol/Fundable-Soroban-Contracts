@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 NETWORK="testnet"
-SOURCE="deployer"
+SOURCE=${1:-"deployer"}
 
 # Extract the admin address from the configured identity
 ADMIN=$(stellar keys address $SOURCE)
@@ -51,7 +51,7 @@ stellar contract invoke --id $LOCKUP_ID --source $SOURCE --network $NETWORK -- i
 
 echo "Initializing stream_nft contract..."
 stellar contract invoke --id $NFT_ID --source $SOURCE --network $NETWORK -- initialize \
-    --admin $ADMIN \
+    --admin $ROUTER_ID \
     --name "Fundable Stream NFT" \
     --symbol "FSNFT"
 

@@ -59,6 +59,15 @@ impl RouterContract {
         env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
     }
 
+    /// Admin can upgrade the NFT contract logic.
+    pub fn upgrade_nft(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        let nft_addr: Address = env.storage().instance().get(&DataKey::NftContract).unwrap();
+        let nft_client = nft_client::Client::new(&env, &nft_addr);
+        nft_client.upgrade(&new_wasm_hash);
+    }
+
     // --- Create Streams ---
 
     /// Create a Flow stream and mint an NFT.
