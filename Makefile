@@ -2,9 +2,14 @@ default: build
 
 all: test
 
-# Build all contracts in the workspace
+# Build contracts in dependency order. Router imports the generated Flow,
+# Lockup, and Stream NFT WASM specifications at compile time.
 build:
-	stellar contract build
+	stellar contract build --package flow
+	stellar contract build --package lockup
+	stellar contract build --package stream-nft
+	stellar contract build --package paymaster
+	stellar contract build --package router
 	@echo ""
 	@echo "Built WASM artifacts:"
 	@ls -lh target/wasm32v1-none/release/*.wasm 2>/dev/null || echo "  (none found)"
