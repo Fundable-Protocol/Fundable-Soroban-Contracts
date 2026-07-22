@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Event emission helpers for the Fundable streaming protocol.
 //!
 //! All state-changing operations emit events per SKILL.md §8.
@@ -42,13 +43,7 @@ pub fn emit_flow_deposit(env: &Env, stream_id: u64, funder: &Address, amount: i1
 }
 
 /// Emit when tokens are withdrawn from a Flow stream.
-pub fn emit_flow_withdraw(
-    env: &Env,
-    stream_id: u64,
-    to: &Address,
-    caller: &Address,
-    amount: i128,
-) {
+pub fn emit_flow_withdraw(env: &Env, stream_id: u64, to: &Address, caller: &Address, amount: i128) {
     let topics = (Symbol::new(env, "flow_withdraw"), stream_id);
     let data = (to.clone(), caller.clone(), amount);
     env.events().publish(topics, data);
@@ -68,12 +63,7 @@ pub fn emit_flow_paused(
 }
 
 /// Emit when a paused Flow stream is restarted.
-pub fn emit_flow_restarted(
-    env: &Env,
-    stream_id: u64,
-    sender: &Address,
-    rate_per_second: i128,
-) {
+pub fn emit_flow_restarted(env: &Env, stream_id: u64, sender: &Address, rate_per_second: i128) {
     let topics = (Symbol::new(env, "flow_restarted"), stream_id);
     let data = (sender.clone(), rate_per_second);
     env.events().publish(topics, data);
@@ -191,12 +181,7 @@ pub fn emit_lockup_renounced(env: &Env, stream_id: u64) {
 // ---------------------------------------------------------------------------
 
 /// Emit when an NFT is transferred (or minted/burned).
-pub fn emit_nft_transfer(
-    env: &Env,
-    from: &Address,
-    to: &Address,
-    token_id: i128,
-) {
+pub fn emit_nft_transfer(env: &Env, from: &Address, to: &Address, token_id: i128) {
     let topics = (Symbol::new(env, "transfer"), from.clone(), to.clone());
     env.events().publish(topics, token_id);
 }
@@ -214,34 +199,6 @@ pub fn emit_admin_initialized(env: &Env, admin: &Address) {
 /// Emit when admin rights are transferred.
 pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
     let topics = (Symbol::new(env, "admin_transferred"),);
-    env.events().publish(topics, (old_admin.clone(), new_admin.clone()));
-}
-
-// ---------------------------------------------------------------------------
-// Paymaster Events
-// ---------------------------------------------------------------------------
-
-/// Emit when a fee is collected by the Paymaster.
-pub fn emit_fee_collected(
-    env: &Env,
-    user: &Address,
-    relayer: &Address,
-    fee_token: &Address,
-    amount: i128,
-) {
-    let topics = (Symbol::new(env, "fee_collected"),);
-    let data = (user.clone(), relayer.clone(), fee_token.clone(), amount);
-    env.events().publish(topics, data);
-}
-
-/// Emit when the Paymaster forwards an invocation to a target contract.
-pub fn emit_invocation_forwarded(
-    env: &Env,
-    user: &Address,
-    target_contract: &Address,
-    function_name: &Symbol,
-) {
-    let topics = (Symbol::new(env, "invocation_forwarded"),);
-    let data = (user.clone(), target_contract.clone(), function_name.clone());
-    env.events().publish(topics, data);
+    env.events()
+        .publish(topics, (old_admin.clone(), new_admin.clone()));
 }

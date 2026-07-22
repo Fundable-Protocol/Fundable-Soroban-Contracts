@@ -6,13 +6,14 @@ use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env,
 // Import the actual contract types to register them in tests
 use flow::FlowContract;
 use lockup::LockupContract;
-use stream_nft::StreamNftContract;
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
+use stream_nft::StreamNftContract;
 
 #[test]
 fn test_initialize() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let router_id = env.register(RouterContract, ());
@@ -32,6 +33,7 @@ fn test_initialize() {
 #[should_panic(expected = "HostError: Error(Contract, #301)")]
 fn test_initialize_twice_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let router_id = env.register(RouterContract, ());
@@ -49,6 +51,7 @@ fn test_initialize_twice_fails() {
 #[test]
 fn test_end_to_end_flow_stream() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     // 1. Deploy token
@@ -81,18 +84,18 @@ fn test_end_to_end_flow_stream() {
     // 3. Setup users
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
-    
+
     // Mint 1000 tokens to sender
     let decimals = 10u32.pow(7);
     token_admin_client.mint(&sender, &(1000 * decimals as i128));
 
     // 4. Create Flow Stream via Router
     let rate_per_second = 1_000_000_000_000_000_000; // 1 token per second in 1e18 fixed point
-    
+
     // Set up ledger with a known timestamp
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -100,9 +103,9 @@ fn test_end_to_end_flow_stream() {
         min_persistent_entry_ttl: 100,
         max_entry_ttl: 10_000_000,
     });
-    
+
     let start_time = env.ledger().timestamp();
-    
+
     let token_nft_id = router_client.create_flow_stream(
         &sender,
         &recipient,
@@ -125,12 +128,16 @@ fn test_end_to_end_flow_stream() {
     assert_eq!(stream_type as u32, nft_client::StreamType::Flow as u32);
     assert_eq!(stream_id, 1);
 
-    flow_client::Client::new(&env, &flow_id).deposit(&stream_id, &sender, &(100 * decimals as i128));
+    flow_client::Client::new(&env, &flow_id).deposit(
+        &stream_id,
+        &sender,
+        &(100 * decimals as i128),
+    );
 
     // 6. Fast forward time and withdraw
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: start_time + 10, // 10 seconds pass = 10 tokens vested
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -140,7 +147,12 @@ fn test_end_to_end_flow_stream() {
     });
 
     // Recipient calls withdraw via router
-    router_client.withdraw(&token_nft_id, &recipient, &recipient, &(10 * decimals as i128));
+    router_client.withdraw(
+        &token_nft_id,
+        &recipient,
+        &recipient,
+        &(10 * decimals as i128),
+    );
 
     // Verify token balances
     assert_eq!(token_client.balance(&recipient), 10 * decimals as i128);
@@ -149,6 +161,7 @@ fn test_end_to_end_flow_stream() {
 #[test]
 fn test_end_to_end_lockup_stream() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     // 1. Deploy token
@@ -181,14 +194,14 @@ fn test_end_to_end_lockup_stream() {
     // 3. Setup users
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
-    
+
     // Mint tokens to sender
     let decimals = 10u32.pow(7);
     token_admin_client.mint(&sender, &(1000 * decimals as i128));
 
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -196,7 +209,7 @@ fn test_end_to_end_lockup_stream() {
         min_persistent_entry_ttl: 100,
         max_entry_ttl: 10_000_000,
     });
-    
+
     let start_time = env.ledger().timestamp();
     let cliff_time = start_time + 10;
     let end_time = start_time + 100;
@@ -226,7 +239,7 @@ fn test_end_to_end_lockup_stream() {
     // 4. Advance time past cliff
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: start_time + 55, // halfway done past cliff (45 / 90)
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -236,7 +249,12 @@ fn test_end_to_end_lockup_stream() {
     });
 
     // 5. Withdraw via Router
-    router_client.withdraw(&token_nft_id, &recipient, &recipient, &(50 * decimals as i128));
+    router_client.withdraw(
+        &token_nft_id,
+        &recipient,
+        &recipient,
+        &(50 * decimals as i128),
+    );
     assert_eq!(token_client.balance(&recipient), 50 * decimals as i128);
 }
 
@@ -244,6 +262,7 @@ fn test_end_to_end_lockup_stream() {
 #[should_panic(expected = "HostError: Error(Contract, #303)")]
 fn test_withdraw_fails_if_not_nft_owner() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     // 1. Deploy token
@@ -276,13 +295,13 @@ fn test_withdraw_fails_if_not_nft_owner() {
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let malicious_actor = Address::generate(&env);
-    
+
     let decimals = 10u32.pow(7);
     token_admin_client.mint(&sender, &(1000 * decimals as i128));
 
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -290,7 +309,7 @@ fn test_withdraw_fails_if_not_nft_owner() {
         min_persistent_entry_ttl: 100,
         max_entry_ttl: 10_000_000,
     });
-    
+
     let token_nft_id = router_client.create_flow_stream(
         &sender,
         &recipient,
@@ -303,7 +322,7 @@ fn test_withdraw_fails_if_not_nft_owner() {
     // Fast forward
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -314,12 +333,18 @@ fn test_withdraw_fails_if_not_nft_owner() {
 
     // Malicious actor tries to withdraw
     // Error 102 is RouterError::Unauthorized
-    router_client.withdraw(&token_nft_id, &malicious_actor, &malicious_actor, &(10 * decimals as i128));
+    router_client.withdraw(
+        &token_nft_id,
+        &malicious_actor,
+        &malicious_actor,
+        &(10 * decimals as i128),
+    );
 }
 
 #[test]
 fn test_withdraw_after_nft_transfer() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let token_admin = Address::generate(&env);
@@ -349,13 +374,13 @@ fn test_withdraw_after_nft_transfer() {
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
     let new_owner = Address::generate(&env);
-    
+
     let decimals = 10u32.pow(7);
     token_admin_client.mint(&sender, &(1000 * decimals as i128));
 
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -363,7 +388,7 @@ fn test_withdraw_after_nft_transfer() {
         min_persistent_entry_ttl: 100,
         max_entry_ttl: 10_000_000,
     });
-    
+
     let token_nft_id = router_client.create_flow_stream(
         &sender,
         &recipient,
@@ -374,7 +399,11 @@ fn test_withdraw_after_nft_transfer() {
     );
 
     let (_stream_type, stream_id) = local_nft_client.get_stream_data(&token_nft_id);
-    flow_client::Client::new(&env, &flow_id).deposit(&stream_id, &sender, &(100 * decimals as i128));
+    flow_client::Client::new(&env, &flow_id).deposit(
+        &stream_id,
+        &sender,
+        &(100 * decimals as i128),
+    );
 
     // Transfer NFT to new owner
     local_nft_client.transfer(&recipient, &new_owner, &token_nft_id);
@@ -383,7 +412,7 @@ fn test_withdraw_after_nft_transfer() {
     // Fast forward
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -393,7 +422,12 @@ fn test_withdraw_after_nft_transfer() {
     });
 
     // New owner calls withdraw via router
-    router_client.withdraw(&token_nft_id, &new_owner, &new_owner, &(10 * decimals as i128));
+    router_client.withdraw(
+        &token_nft_id,
+        &new_owner,
+        &new_owner,
+        &(10 * decimals as i128),
+    );
 
     // Verify new owner got the tokens
     assert_eq!(token_client.balance(&new_owner), 10 * decimals as i128);
@@ -402,6 +436,7 @@ fn test_withdraw_after_nft_transfer() {
 #[test]
 fn test_upgrade() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let flow_id = env.register(FlowContract, ());
@@ -416,7 +451,7 @@ fn test_upgrade() {
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
     router_client.upgrade(&new_wasm_hash);
-    
+
     // Check that admin authorization was requested
     let auths = env.auths();
     assert!(auths.len() > 0);
@@ -426,6 +461,7 @@ fn test_upgrade() {
 #[test]
 fn test_upgrade_nft() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let flow_id = env.register(FlowContract, ());
@@ -434,7 +470,7 @@ fn test_upgrade_nft() {
     let router_id = env.register(RouterContract, ());
 
     let admin = Address::generate(&env);
-    
+
     // Initialize NFT with Router as admin
     nft_client::Client::new(&env, &nft_id).initialize(
         &router_id,
@@ -448,10 +484,9 @@ fn test_upgrade_nft() {
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
     router_client.upgrade_nft(&new_wasm_hash);
-    
+
     // Check that admin authorization was requested
     let auths = env.auths();
     assert!(auths.len() > 0);
     assert_eq!(auths[0].0, admin);
 }
-

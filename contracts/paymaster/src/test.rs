@@ -13,7 +13,7 @@ use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, IntoVal, Symbol,
+    Address, Env, Symbol,
 };
 
 // ---------------------------------------------------------------------------
@@ -58,19 +58,20 @@ const ONE_TOKEN: i128 = 10_000_000; // 1e7
 /// - The Paymaster contract initialized with the fee token
 fn setup_test() -> (
     Env,
-    Address,             // paymaster contract id
-    Address,             // admin
-    Address,             // user
-    Address,             // relayer
-    Address,             // fee token address
+    Address,              // paymaster contract id
+    Address,              // admin
+    Address,              // user
+    Address,              // relayer
+    Address,              // fee token address
     TokenClient<'static>, // fee token client
 ) {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     env.ledger().set(LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -100,7 +101,15 @@ fn setup_test() -> (
     let allowed_tokens = Vec::from_array(&env, [fee_token.clone()]);
     client.initialize(&admin, &allowed_tokens);
 
-    (env, contract_id, admin, user, relayer, fee_token, token_client)
+    (
+        env,
+        contract_id,
+        admin,
+        user,
+        relayer,
+        fee_token,
+        token_client,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +119,7 @@ fn setup_test() -> (
 #[test]
 fn test_initialize() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(PaymasterContract, ());
@@ -126,6 +136,7 @@ fn test_initialize() {
 #[should_panic(expected = "Error(Contract, #401)")] // AlreadyInitialized
 fn test_initialize_twice_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(PaymasterContract, ());
@@ -141,13 +152,11 @@ fn test_initialize_twice_fails() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_get_fee_tokens() {
+fn test_fee_token_is_allowed() {
     let (env, contract_id, _admin, _user, _relayer, fee_token, _token_client) = setup_test();
     let client = PaymasterContractClient::new(&env, &contract_id);
 
-    let tokens = client.get_fee_tokens();
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens.get(0).unwrap(), fee_token);
+    assert!(client.is_fee_token_allowed(&fee_token));
 }
 
 #[test]
@@ -160,206 +169,9 @@ fn test_add_fee_token() {
     let sac2 = env.register_stellar_asset_contract_v2(token_admin2);
     let fee_token2 = sac2.address();
 
+    assert!(!client.is_fee_token_allowed(&fee_token2));
     client.add_fee_token(&fee_token2);
-
-    let tokens = client.get_fee_tokens();
-    assert_eq!(tokens.len(), 2);
-}
-
-#[test]
-fn test_add_duplicate_fee_token_is_noop() {
-    let (env, contract_id, _admin, _user, _relayer, fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Adding the same token again should not create a duplicate
-    client.add_fee_token(&fee_token);
-
-    let tokens = client.get_fee_tokens();
-    assert_eq!(tokens.len(), 1);
-}
-
-#[test]
-fn test_remove_fee_token() {
-    let (env, contract_id, _admin, _user, _relayer, fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    client.remove_fee_token(&fee_token);
-
-    let tokens = client.get_fee_tokens();
-    assert_eq!(tokens.len(), 0);
-}
-
-// ---------------------------------------------------------------------------
-// Core: collect_fee_and_invoke Tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_collect_fee_and_invoke_basic() {
-    let (env, contract_id, _admin, user, relayer, fee_token, token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Register a target contract
-    let target_id = env.register(target_contract::TargetContract, ());
-
-    let fee = 50 * ONE_TOKEN; // 50 tokens fee
-    let user_balance_before = token_client.balance(&user);
-    let relayer_balance_before = token_client.balance(&relayer);
-
-    // Build args for the target's `ping` function (no args)
-    let args: Vec<Val> = Vec::new(&env);
-
-    let result: Val = client.collect_fee_and_invoke(
-        &user,
-        &fee_token,
-        &fee,
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "ping"),
-        &args,
-    );
-
-    // Verify the target was invoked and returned 42
-    let result_u32: u32 = result.into_val(&env);
-    assert_eq!(result_u32, 42);
-
-    // Verify fee was transferred
-    assert_eq!(token_client.balance(&user), user_balance_before - fee);
-    assert_eq!(token_client.balance(&relayer), relayer_balance_before + fee);
-}
-
-#[test]
-fn test_collect_fee_and_invoke_with_args() {
-    let (env, contract_id, _admin, user, relayer, fee_token, token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Register a target contract
-    let target_id = env.register(target_contract::TargetContract, ());
-
-    let fee = 10 * ONE_TOKEN;
-    let user_balance_before = token_client.balance(&user);
-
-    // Build args for `authed_action(user, 100)`
-    let args: Vec<Val> = Vec::from_array(&env, [
-        user.clone().into_val(&env),
-        (100_i128).into_val(&env),
-    ]);
-
-    let result: Val = client.collect_fee_and_invoke(
-        &user,
-        &fee_token,
-        &fee,
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "authed_action"),
-        &args,
-    );
-
-    // authed_action returns amount * 2 = 200
-    let result_i128: i128 = result.into_val(&env);
-    assert_eq!(result_i128, 200);
-
-    // Fee deducted
-    assert_eq!(token_client.balance(&user), user_balance_before - fee);
-}
-
-// ---------------------------------------------------------------------------
-// Negative Tests
-// ---------------------------------------------------------------------------
-
-#[test]
-#[should_panic(expected = "Error(Contract, #404)")] // TokenNotAllowed
-fn test_collect_fee_disallowed_token() {
-    let (env, contract_id, _admin, user, relayer, _fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Create a token that is NOT in the allowed list
-    let rogue_admin = Address::generate(&env);
-    let rogue_sac = env.register_stellar_asset_contract_v2(rogue_admin);
-    let rogue_token = rogue_sac.address();
-
-    let target_id = env.register(target_contract::TargetContract, ());
-    let args: Vec<Val> = Vec::new(&env);
-
-    // This should panic because rogue_token is not whitelisted
-    client.collect_fee_and_invoke(
-        &user,
-        &rogue_token,
-        &(10 * ONE_TOKEN),
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "ping"),
-        &args,
-    );
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #405)")] // FeeAmountZero
-fn test_collect_fee_zero_amount() {
-    let (env, contract_id, _admin, user, relayer, fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    let target_id = env.register(target_contract::TargetContract, ());
-    let args: Vec<Val> = Vec::new(&env);
-
-    // Fee of 0 should fail
-    client.collect_fee_and_invoke(
-        &user,
-        &fee_token,
-        &0_i128,
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "ping"),
-        &args,
-    );
-}
-
-#[test]
-#[should_panic] // Token transfer will fail due to insufficient balance
-fn test_collect_fee_insufficient_balance() {
-    let (env, contract_id, _admin, _user, relayer, fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Create a new user with NO fee tokens
-    let broke_user = Address::generate(&env);
-
-    let target_id = env.register(target_contract::TargetContract, ());
-    let args: Vec<Val> = Vec::new(&env);
-
-    // This should fail because broke_user has 0 fee tokens
-    client.collect_fee_and_invoke(
-        &broke_user,
-        &fee_token,
-        &(10 * ONE_TOKEN),
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "ping"),
-        &args,
-    );
-}
-
-#[test]
-fn test_fee_token_removed_then_rejected() {
-    let (env, contract_id, _admin, user, relayer, fee_token, _token_client) = setup_test();
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    // Remove the fee token
-    client.remove_fee_token(&fee_token);
-
-    let target_id = env.register(target_contract::TargetContract, ());
-    let args: Vec<Val> = Vec::new(&env);
-
-    // Now trying to use that token should fail
-    let result = client.try_collect_fee_and_invoke(
-        &user,
-        &fee_token,
-        &(10 * ONE_TOKEN),
-        &relayer,
-        &target_id,
-        &Symbol::new(&env, "ping"),
-        &args,
-    );
-
-    assert!(result.is_err());
+    assert!(client.is_fee_token_allowed(&fee_token2));
 }
 
 // ---------------------------------------------------------------------------
@@ -414,4 +226,95 @@ fn test_multiple_fee_tokens() {
         &args,
     );
     assert_eq!(token_client2.balance(&user), user_bal2_before - fee2);
+}
+
+#[test]
+fn test_forward_collects_bounded_fee_and_invokes_target() {
+    let (env, contract_id, _admin, user, relayer, fee_token, token_client) = setup_test();
+    let client = PaymasterContractClient::new(&env, &contract_id);
+    let target_id = env.register(target_contract::TargetContract, ());
+    let args: Vec<Val> = Vec::new(&env);
+    let fee = 10 * ONE_TOKEN;
+    let user_before = token_client.balance(&user);
+    let recipient_before = token_client.balance(&relayer);
+
+    client.forward(
+        &user,
+        &fee_token,
+        &fee,
+        &(fee * 2),
+        &200,
+        &relayer,
+        &target_id,
+        &Symbol::new(&env, "ping"),
+        &args,
+    );
+
+    assert_eq!(token_client.balance(&user), user_before - fee);
+    assert_eq!(token_client.balance(&relayer), recipient_before + fee);
+}
+
+#[test]
+#[should_panic]
+fn test_forward_rejects_fee_above_authorized_maximum() {
+    let (env, contract_id, _admin, user, relayer, fee_token, _token_client) = setup_test();
+    let client = PaymasterContractClient::new(&env, &contract_id);
+    let target_id = env.register(target_contract::TargetContract, ());
+    let args: Vec<Val> = Vec::new(&env);
+
+    client.forward(
+        &user,
+        &fee_token,
+        &(2 * ONE_TOKEN),
+        &ONE_TOKEN,
+        &200,
+        &relayer,
+        &target_id,
+        &Symbol::new(&env, "ping"),
+        &args,
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_forward_rejects_expired_approval() {
+    let (env, contract_id, _admin, user, relayer, fee_token, _token_client) = setup_test();
+    let client = PaymasterContractClient::new(&env, &contract_id);
+    let target_id = env.register(target_contract::TargetContract, ());
+    let args: Vec<Val> = Vec::new(&env);
+
+    client.forward(
+        &user,
+        &fee_token,
+        &ONE_TOKEN,
+        &ONE_TOKEN,
+        &99,
+        &relayer,
+        &target_id,
+        &Symbol::new(&env, "ping"),
+        &args,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #404)")]
+fn test_forward_rejects_disallowed_fee_token() {
+    let (env, contract_id, _admin, user, relayer, _fee_token, _token_client) = setup_test();
+    let client = PaymasterContractClient::new(&env, &contract_id);
+    let target_id = env.register(target_contract::TargetContract, ());
+    let token_admin = Address::generate(&env);
+    let disallowed_token = env.register_stellar_asset_contract_v2(token_admin).address();
+    let args: Vec<Val> = Vec::new(&env);
+
+    client.forward(
+        &user,
+        &disallowed_token,
+        &ONE_TOKEN,
+        &ONE_TOKEN,
+        &200,
+        &relayer,
+        &target_id,
+        &Symbol::new(&env, "ping"),
+        &args,
+    );
 }

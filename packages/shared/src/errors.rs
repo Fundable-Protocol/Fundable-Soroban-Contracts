@@ -16,41 +16,41 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum FlowError {
     // --- Stream existence & state ---
-    /// Stream ID does not exist. 
+    /// Stream ID does not exist.
     StreamNotFound = 1,
-    /// Caller is not authorized for this operation. 
+    /// Caller is not authorized for this operation.
     Unauthorized = 2,
-    /// Stream is paused; operation requires active streaming. 
+    /// Stream is paused; operation requires active streaming.
     StreamPaused = 3,
-    /// Stream is voided; no further mutations allowed. 
+    /// Stream is voided; no further mutations allowed.
     StreamVoided = 4,
-    /// Stream is not paused; restart requires a paused stream. 
+    /// Stream is not paused; restart requires a paused stream.
     StreamNotPaused = 5,
-    /// Stream has not started yet (snapshot_time in the future). 
+    /// Stream has not started yet (snapshot_time in the future).
     StreamPending = 6,
 
     // --- Rate & amount validation ---
-    /// New rate per second must be > 0. 
+    /// New rate per second must be > 0.
     RatePerSecondZero = 7,
-    /// New rate must differ from current rate. 
+    /// New rate must differ from current rate.
     RateNotDifferent = 8,
-    /// Deposit amount must be > 0. 
+    /// Deposit amount must be > 0.
     DepositAmountZero = 9,
-    /// Withdraw amount must be > 0. 
+    /// Withdraw amount must be > 0.
     WithdrawAmountZero = 10,
-    /// Withdraw amount exceeds withdrawable balance. 
+    /// Withdraw amount exceeds withdrawable balance.
     Overdraw = 11,
-    /// Refund amount must be > 0. 
+    /// Refund amount must be > 0.
     RefundAmountZero = 12,
-    /// Refund amount exceeds refundable balance. 
+    /// Refund amount exceeds refundable balance.
     RefundOverflow = 13,
 
     // --- Token validation ---
-    /// Token has > 18 decimals, unsupported. 
+    /// Token has > 18 decimals, unsupported.
     InvalidTokenDecimals = 14,
 
     // --- Balance ---
-    /// Stream balance is zero (e.g. querying depletion time). 
+    /// Stream balance is zero (e.g. querying depletion time).
     BalanceZero = 15,
 
     // --- Initialization ---
@@ -60,7 +60,7 @@ pub enum FlowError {
     NotInitialized = 17,
 
     // --- Create validation ---
-    /// Cannot create a pending stream with rate_per_second = 0. 
+    /// Cannot create a pending stream with rate_per_second = 0.
     CreateRatePerSecondZero = 18,
 
     // --- Internal safety ---
@@ -134,25 +134,4 @@ pub enum RouterError {
     NotInitialized = 302,
     NotAuthorized = 303,
     InvalidStreamType = 304,
-}
-
-// ---------------------------------------------------------------------------
-// Paymaster Errors
-// ---------------------------------------------------------------------------
-
-/// Errors specific to the Paymaster (FeeForwarder) contract.
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-#[repr(u32)]
-pub enum PaymasterError {
-    /// Contract already initialized.
-    AlreadyInitialized = 401,
-    /// Contract not yet initialized.
-    NotInitialized = 402,
-    /// Caller is not the admin.
-    NotAuthorized = 403,
-    /// The provided fee token is not in the allowed list.
-    TokenNotAllowed = 404,
-    /// Fee amount must be > 0.
-    FeeAmountZero = 405,
 }

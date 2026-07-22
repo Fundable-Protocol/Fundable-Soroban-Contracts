@@ -233,7 +233,6 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     stream_id
 }
 
-
 /// Withdraw vested tokens from a Lockup stream.
 ///
 /// Only the recipient can withdraw. The amount is capped at the

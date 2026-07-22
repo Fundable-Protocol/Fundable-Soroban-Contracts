@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env, String};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env, String};
 
 fn create_contract(env: &Env) -> (Address, StreamNftContractClient) {
     let contract_id = env.register(StreamNftContract, ());
@@ -12,11 +12,12 @@ fn create_contract(env: &Env) -> (Address, StreamNftContractClient) {
 #[test]
 fn test_initialize() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -30,11 +31,12 @@ fn test_initialize() {
 #[should_panic(expected = "HostError: Error(Contract, #201)")]
 fn test_initialize_twice_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -45,11 +47,12 @@ fn test_initialize_twice_fails() {
 #[test]
 fn test_mint_and_burn() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -66,7 +69,10 @@ fn test_mint_and_burn() {
 
     assert_eq!(client.balance(&user), 1);
     assert_eq!(client.owner_of(&token_id), user);
-    assert_eq!(client.get_stream_data(&token_id), (StreamType::Flow, stream_id));
+    assert_eq!(
+        client.get_stream_data(&token_id),
+        (StreamType::Flow, stream_id)
+    );
 
     // Burn
     client.burn(&token_id);
@@ -78,11 +84,12 @@ fn test_mint_and_burn() {
 #[should_panic(expected = "HostError: Error(Contract, #203)")]
 fn test_burn_nonexistent_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -93,11 +100,12 @@ fn test_burn_nonexistent_fails() {
 #[test]
 fn test_transfer() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -124,11 +132,12 @@ fn test_transfer() {
 #[should_panic(expected = "HostError: Error(Contract, #202)")]
 fn test_transfer_unauthorized_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     let (_, client) = create_contract(&env);
     let admin = Address::generate(&env);
-    
+
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSTRM");
 
@@ -140,8 +149,8 @@ fn test_transfer_unauthorized_fails() {
     let stream_id = 42;
 
     client.mint(&user1, &StreamType::Flow, &stream_id, &token_id);
-    
-    // user2 tries to transfer user1's token. (In mock_all_auths, the auth check passes, 
+
+    // user2 tries to transfer user1's token. (In mock_all_auths, the auth check passes,
     // but our logic enforces `owner == from` which fails if we pass user2 as from)
     client.transfer(&user2, &user2, &token_id);
 }
