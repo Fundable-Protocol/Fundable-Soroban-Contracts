@@ -32,14 +32,22 @@ const ONE_TOKEN: i128 = 10_000_000; // 1e7
 const RATE_1_PER_SEC: i128 = 1_000_000_000_000_000_000; // 1e18
 
 /// Set up a test environment with a token contract and funded accounts.
-fn setup_test() -> (Env, Address, Address, Address, Address, TokenClient<'static>) {
+fn setup_test() -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    Address,
+    TokenClient<'static>,
+) {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     // Set up ledger with a known timestamp
     env.ledger().set(LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -84,6 +92,7 @@ fn get_client<'a>(env: &Env, contract_id: &Address) -> FlowContractClient<'a> {
 #[test]
 fn test_initialize() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(FlowContract, ());
@@ -96,6 +105,7 @@ fn test_initialize() {
 #[should_panic(expected = "Error(Contract, #16)")] // AlreadyInitialized
 fn test_initialize_twice_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(FlowContract, ());
@@ -138,8 +148,22 @@ fn test_create_multiple_streams() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
 
-    let id1 = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
-    let id2 = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let id1 = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
+    let id2 = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
 
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
@@ -196,7 +220,14 @@ fn test_deposit() {
     let (env, contract_id, sender, recipient, token, token_client) = setup_test();
     let client = get_client(&env, &contract_id);
 
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
 
     let amount = 50 * ONE_TOKEN;
     client.deposit(&stream_id, &sender, &amount);
@@ -211,7 +242,14 @@ fn test_deposit_zero_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
 
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.deposit(&stream_id, &sender, &0i128);
 }
 
@@ -239,7 +277,7 @@ fn test_withdraw_after_time() {
     // Advance time by 10 seconds
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -260,7 +298,10 @@ fn test_withdraw_after_time() {
     assert_eq!(token_client.balance(&recipient), withdraw_amount);
 
     // Stream balance should be reduced
-    assert_eq!(client.get_balance(&stream_id), deposit_amount - withdraw_amount);
+    assert_eq!(
+        client.get_balance(&stream_id),
+        deposit_amount - withdraw_amount
+    );
 }
 
 #[test]
@@ -282,7 +323,7 @@ fn test_withdraw_max() {
     // Advance time by 20 seconds
     env.ledger().set(LedgerInfo {
         timestamp: 1020,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 120,
         network_id: Default::default(),
         base_reserve: 10,
@@ -315,7 +356,7 @@ fn test_withdraw_overdraw_fails() {
     // Advance time by 5 seconds (5 tokens owed)
     env.ledger().set(LedgerInfo {
         timestamp: 1005,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 105,
         network_id: Default::default(),
         base_reserve: 10,
@@ -346,7 +387,7 @@ fn test_withdraw_wrong_caller_fails() {
 
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -381,7 +422,7 @@ fn test_pause_and_restart() {
     // Advance 10 seconds
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -402,7 +443,7 @@ fn test_pause_and_restart() {
     // Advance another 10 seconds — debt should NOT increase
     env.ledger().set(LedgerInfo {
         timestamp: 1020,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 120,
         network_id: Default::default(),
         base_reserve: 10,
@@ -425,7 +466,7 @@ fn test_pause_and_restart() {
     // Advance 5 more seconds — should accrue 10 additional tokens (2/sec × 5)
     env.ledger().set(LedgerInfo {
         timestamp: 1025,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 125,
         network_id: Default::default(),
         base_reserve: 10,
@@ -460,7 +501,7 @@ fn test_adjust_rate() {
     // Advance 10 seconds (10 tokens accrued at 1/sec)
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -476,7 +517,7 @@ fn test_adjust_rate() {
     // Advance another 5 seconds (10 tokens at 2/sec)
     env.ledger().set(LedgerInfo {
         timestamp: 1015,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 115,
         network_id: Default::default(),
         base_reserve: 10,
@@ -512,7 +553,7 @@ fn test_refund() {
     // Advance 10 seconds (10 tokens owed, 90 refundable)
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -533,7 +574,10 @@ fn test_refund() {
         token_client.balance(&sender),
         sender_balance_before + refund_amount
     );
-    assert_eq!(client.get_balance(&stream_id), deposit_amount - refund_amount);
+    assert_eq!(
+        client.get_balance(&stream_id),
+        deposit_amount - refund_amount
+    );
 }
 
 #[test]
@@ -555,7 +599,7 @@ fn test_refund_max() {
     // Advance 10 seconds
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -592,7 +636,7 @@ fn test_refund_too_much_fails() {
     // Advance 10 seconds (10 owed, 90 refundable)
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -627,7 +671,7 @@ fn test_void_solvent_stream() {
     // Advance 10 seconds
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -667,7 +711,7 @@ fn test_void_insolvent_stream() {
     // Advance 10 seconds (10 tokens owed but only 5 in balance)
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -754,7 +798,7 @@ fn test_status_streaming_insolvent() {
     // Advance past the balance
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -777,8 +821,14 @@ fn test_full_lifecycle() {
     let client = get_client(&env, &contract_id);
 
     // 1. Create stream
-    let stream_id =
-        client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     assert_eq!(client.status_of(&stream_id), StreamStatus::StreamingSolvent);
 
     // 2. Deposit 50 tokens
@@ -788,7 +838,7 @@ fn test_full_lifecycle() {
     // 3. Advance 10 seconds, withdraw 10 tokens
     env.ledger().set(LedgerInfo {
         timestamp: 1010,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -806,7 +856,7 @@ fn test_full_lifecycle() {
     // 5. Advance time while paused — no debt increase
     env.ledger().set(LedgerInfo {
         timestamp: 1020,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 120,
         network_id: Default::default(),
         base_reserve: 10,
@@ -827,7 +877,7 @@ fn test_full_lifecycle() {
     // 7. Advance 10 more seconds (5 tokens at 0.5/sec)
     env.ledger().set(LedgerInfo {
         timestamp: 1030,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 130,
         network_id: Default::default(),
         base_reserve: 10,
@@ -854,7 +904,14 @@ fn test_full_lifecycle() {
 fn test_create_sender_equals_recipient() {
     let (env, contract_id, sender, _recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    client.create(&sender, &sender, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    client.create(
+        &sender,
+        &sender,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
 }
 
 #[test]
@@ -878,7 +935,14 @@ fn test_create_negative_rate() {
 fn test_create_pending_with_zero_rate() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    client.create(&sender, &recipient, &token, &0i128, &TOKEN_DECIMALS, &2000u64);
+    client.create(
+        &sender,
+        &recipient,
+        &token,
+        &0i128,
+        &TOKEN_DECIMALS,
+        &2000u64,
+    );
 }
 
 #[test]
@@ -886,7 +950,15 @@ fn test_create_pending_with_zero_rate() {
 fn test_withdraw_zero_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(100 * ONE_TOKEN));
+    let stream_id = client.create_and_deposit(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+        &(100 * ONE_TOKEN),
+    );
     client.withdraw(&stream_id, &recipient, &recipient, &0i128);
 }
 
@@ -895,7 +967,14 @@ fn test_withdraw_zero_fails() {
 fn test_pause_already_paused_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.pause(&stream_id, &sender);
     client.pause(&stream_id, &sender); // Should fail
 }
@@ -905,7 +984,14 @@ fn test_pause_already_paused_fails() {
 fn test_pause_pending_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &2000u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &2000u64,
+    );
     client.pause(&stream_id, &sender);
 }
 
@@ -914,7 +1000,14 @@ fn test_pause_pending_fails() {
 fn test_pause_voided_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.void_stream(&stream_id, &sender);
     client.pause(&stream_id, &sender);
 }
@@ -924,7 +1017,14 @@ fn test_pause_voided_fails() {
 fn test_pause_unauthorized() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.pause(&stream_id, &recipient);
 }
 
@@ -933,7 +1033,14 @@ fn test_pause_unauthorized() {
 fn test_restart_not_paused_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.restart(&stream_id, &sender, &RATE_1_PER_SEC);
 }
 
@@ -942,7 +1049,14 @@ fn test_restart_not_paused_fails() {
 fn test_restart_voided_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.void_stream(&stream_id, &sender);
     client.restart(&stream_id, &sender, &RATE_1_PER_SEC);
 }
@@ -952,7 +1066,14 @@ fn test_restart_voided_fails() {
 fn test_restart_zero_rate_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.pause(&stream_id, &sender);
     client.restart(&stream_id, &sender, &0i128);
 }
@@ -962,7 +1083,14 @@ fn test_restart_zero_rate_fails() {
 fn test_adjust_rate_same_rate_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.adjust_rate(&stream_id, &sender, &RATE_1_PER_SEC);
 }
 
@@ -971,7 +1099,14 @@ fn test_adjust_rate_same_rate_fails() {
 fn test_adjust_rate_zero_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.adjust_rate(&stream_id, &sender, &0i128);
 }
 
@@ -980,7 +1115,15 @@ fn test_adjust_rate_zero_fails() {
 fn test_refund_zero_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(100 * ONE_TOKEN));
+    let stream_id = client.create_and_deposit(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+        &(100 * ONE_TOKEN),
+    );
     client.refund(&stream_id, &sender, &0i128);
 }
 
@@ -989,7 +1132,14 @@ fn test_refund_zero_fails() {
 fn test_depletion_time_zero_balance_fails() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
     client.depletion_time_of(&stream_id);
 }
 
@@ -997,7 +1147,15 @@ fn test_depletion_time_zero_balance_fails() {
 fn test_depletion_time_calculation() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);
-    let stream_id = client.create_and_deposit(&sender, &recipient, &token, &RATE_1_PER_SEC, &TOKEN_DECIMALS, &0u64, &(10 * ONE_TOKEN));
+    let stream_id = client.create_and_deposit(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+        &(10 * ONE_TOKEN),
+    );
     let dt = client.depletion_time_of(&stream_id);
     assert!(dt > 1000);
 }

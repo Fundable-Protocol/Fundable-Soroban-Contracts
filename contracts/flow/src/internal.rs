@@ -342,7 +342,13 @@ pub fn pause(env: &Env, stream_id: u64) {
     let stream = storage::get_stream(env, stream_id).unwrap();
     let total_debt = total_debt_of(env, &stream);
 
-    events::emit_flow_paused(env, stream_id, &stream.sender, &stream.recipient, total_debt);
+    events::emit_flow_paused(
+        env,
+        stream_id,
+        &stream.sender,
+        &stream.recipient,
+        total_debt,
+    );
 }
 
 /// Restart a paused Flow stream with a new rate.

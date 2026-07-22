@@ -1,28 +1,20 @@
 #![no_std]
 
 use shared::errors::RouterError;
-use shared::storage::{
-    DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD
-};
-use shared::types::{CreateLockupParams};
+use shared::storage::{DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD};
+use shared::types::CreateLockupParams;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
 
 mod flow_client {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/flow.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/flow.wasm");
 }
 
 mod lockup_client {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/lockup.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/lockup.wasm");
 }
 
 mod nft_client {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32v1-none/release/stream_nft.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/stream_nft.wasm");
 }
 
 #[contract]
@@ -43,12 +35,22 @@ impl RouterContract {
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::FlowContract, &flow_contract);
-        env.storage().instance().set(&DataKey::LockupContract, &lockup_contract);
-        env.storage().instance().set(&DataKey::NftContract, &nft_contract);
-        env.storage().instance().set(&DataKey::NextStreamId, &1_i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::FlowContract, &flow_contract);
+        env.storage()
+            .instance()
+            .set(&DataKey::LockupContract, &lockup_contract);
+        env.storage()
+            .instance()
+            .set(&DataKey::NftContract, &nft_contract);
+        env.storage()
+            .instance()
+            .set(&DataKey::NextStreamId, &1_i128);
 
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
     }
 
     /// Admin can upgrade the router logic.
@@ -56,7 +58,9 @@ impl RouterContract {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
         env.deployer().update_current_contract_wasm(new_wasm_hash);
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
     }
 
     /// Admin can upgrade the NFT contract logic.
@@ -81,9 +85,15 @@ impl RouterContract {
         start_time: u64,
     ) -> i128 {
         sender.require_auth();
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let flow_addr: Address = env.storage().instance().get(&DataKey::FlowContract).unwrap();
+        let flow_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FlowContract)
+            .unwrap();
         let nft_addr: Address = env.storage().instance().get(&DataKey::NftContract).unwrap();
         let router_addr = env.current_contract_address();
 
@@ -101,24 +111,38 @@ impl RouterContract {
         );
 
         // 2. Generate token ID
-        let token_id: i128 = env.storage().instance().get(&DataKey::NextStreamId).unwrap();
-        env.storage().instance().set(&DataKey::NextStreamId, &(token_id + 1));
+        let token_id: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextStreamId)
+            .unwrap();
+        env.storage()
+            .instance()
+            .set(&DataKey::NextStreamId, &(token_id + 1));
 
         // 3. Mint NFT to actual recipient
-        nft_client.mint(&recipient, &nft_client::StreamType::Flow, &stream_id, &token_id);
+        nft_client.mint(
+            &recipient,
+            &nft_client::StreamType::Flow,
+            &stream_id,
+            &token_id,
+        );
 
         token_id
     }
 
     /// Create a Lockup stream and mint an NFT.
-    pub fn create_lockup_stream(
-        env: Env,
-        params: CreateLockupParams,
-    ) -> i128 {
+    pub fn create_lockup_stream(env: Env, params: CreateLockupParams) -> i128 {
         params.sender.require_auth();
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let lockup_addr: Address = env.storage().instance().get(&DataKey::LockupContract).unwrap();
+        let lockup_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LockupContract)
+            .unwrap();
         let nft_addr: Address = env.storage().instance().get(&DataKey::NftContract).unwrap();
         let router_addr = env.current_contract_address();
         let original_recipient = params.recipient.clone();
@@ -145,11 +169,22 @@ impl RouterContract {
         let stream_id = lockup_client.create(&lockup_params);
 
         // 2. Generate token ID
-        let token_id: i128 = env.storage().instance().get(&DataKey::NextStreamId).unwrap();
-        env.storage().instance().set(&DataKey::NextStreamId, &(token_id + 1));
+        let token_id: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::NextStreamId)
+            .unwrap();
+        env.storage()
+            .instance()
+            .set(&DataKey::NextStreamId, &(token_id + 1));
 
         // 3. Mint NFT to actual recipient
-        nft_client.mint(&original_recipient, &nft_client::StreamType::Lockup, &stream_id, &token_id);
+        nft_client.mint(
+            &original_recipient,
+            &nft_client::StreamType::Lockup,
+            &stream_id,
+            &token_id,
+        );
 
         token_id
     }
@@ -159,10 +194,20 @@ impl RouterContract {
     /// Withdraw tokens from a stream using the NFT.
     pub fn withdraw(env: Env, token_id: i128, caller: Address, to: Address, amount: i128) {
         caller.require_auth();
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let flow_addr: Address = env.storage().instance().get(&DataKey::FlowContract).unwrap();
-        let lockup_addr: Address = env.storage().instance().get(&DataKey::LockupContract).unwrap();
+        let flow_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FlowContract)
+            .unwrap();
+        let lockup_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LockupContract)
+            .unwrap();
         let nft_addr: Address = env.storage().instance().get(&DataKey::NftContract).unwrap();
         let router_addr = env.current_contract_address();
 
@@ -193,10 +238,20 @@ impl RouterContract {
     /// Withdraw max tokens from a stream using the NFT.
     pub fn withdraw_max(env: Env, token_id: i128, caller: Address, to: Address) -> i128 {
         caller.require_auth();
-        env.storage().instance().extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let flow_addr: Address = env.storage().instance().get(&DataKey::FlowContract).unwrap();
-        let lockup_addr: Address = env.storage().instance().get(&DataKey::LockupContract).unwrap();
+        let flow_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FlowContract)
+            .unwrap();
+        let lockup_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::LockupContract)
+            .unwrap();
         let nft_addr: Address = env.storage().instance().get(&DataKey::NftContract).unwrap();
         let router_addr = env.current_contract_address();
 

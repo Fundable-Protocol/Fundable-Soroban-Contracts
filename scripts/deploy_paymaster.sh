@@ -5,8 +5,8 @@ set -e
 NETWORK="testnet"
 SOURCE="deployer"
 
-# Fee token address - pass as first argument or use a default testnet token
-FEE_TOKEN=${1:-"GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"}
+# Fee token contract ID - pass as first argument or use a default testnet token (USDC)
+FEE_TOKEN=${1:-"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"}
 
 # Extract the admin address from the configured identity
 ADMIN=$(stellar keys address $SOURCE)

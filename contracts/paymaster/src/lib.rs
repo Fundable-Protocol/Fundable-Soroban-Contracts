@@ -1,9 +1,10 @@
 //! Fundable Paymaster (FeeForwarder) Contract
 //!
-//! Implements Soroban Gas Abstraction using the FeeForwarder pattern.
-//! Users pay transaction fees in a supported token (e.g. USDC) instead of
-//! native XLM. A relayer submits the transaction and is compensated
-//! atomically from the user's token balance.
+//! Implements Soroban Gas Abstraction using the OpenZeppelin
+//! `stellar-fee-abstraction` crate. Users pay transaction fees in a
+//! supported token (e.g. USDC) instead of native XLM. A relayer submits
+//! the transaction and is compensated atomically from the user's token
+//! balance.
 //!
 //! ## Architecture
 //!
@@ -14,14 +15,33 @@
 //! 3. Returns the result of the target invocation.
 //!
 //! No modifications are required to the existing contracts.
+//!
+//! ## OZ Integration
+//!
+//! This contract uses the official `stellar-fee-abstraction` crate from
+//! OpenZeppelin which provides battle-tested primitives for:
+//! - `collect_fee_and_invoke` — atomic fee collection + target invocation
+//! - `set_allowed_fee_token` / `is_allowed_fee_token` — token allowlist
+//! - `sweep_token` — admin fee sweeping
+//! - `validate_fee_bounds` / `validate_expiration_ledger` — input validation
 
 #![no_std]
 
-use shared::errors::PaymasterError;
-use shared::events::{emit_fee_collected, emit_invocation_forwarded};
+use soroban_sdk::contracterror;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum PaymasterError {
+    AlreadyInitialized = 401,
+    NotInitialized = 402,
+    TokenNotAllowed = 404,
+}
 use shared::storage::{DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD};
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Val, Vec,
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Val, Vec};
+use stellar_fee_abstraction::{
+    collect_fee_and_invoke, is_allowed_fee_token, set_allowed_fee_token, sweep_token,
+    FeeAbstractionApproval,
 };
 
 #[contract]
@@ -49,9 +69,11 @@ impl PaymasterContract {
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage()
-            .instance()
-            .set(&DataKey::AllowedFeeTokens, &allowed_fee_tokens);
+
+        // Register each token in the OZ fee-abstraction allowlist
+        for token in allowed_fee_tokens.iter() {
+            set_allowed_fee_token(&env, &token, true);
+        }
 
         env.storage()
             .instance()
@@ -59,11 +81,11 @@ impl PaymasterContract {
     }
 
     // -----------------------------------------------------------------------
-    // Core: Collect Fee & Invoke
+    // Core: Forward (collect fee and invoke target)
     // -----------------------------------------------------------------------
 
     /// Atomically collect a token fee from the user and invoke the target
-    /// contract function.
+    /// contract function, using the OpenZeppelin fee abstraction helpers.
     ///
     /// The user must authorize both the fee transfer and the downstream
     /// contract invocation via Soroban's native auth framework.
@@ -71,8 +93,10 @@ impl PaymasterContract {
     /// # Arguments
     /// * `user` — The end user paying the fee and authorizing the call.
     /// * `fee_token` — The SAC/SEP-41 token used for fee payment.
-    /// * `max_fee` — The fee amount to transfer from user to relayer.
-    /// * `relayer` — The relayer address receiving the fee.
+    /// * `fee_amount` — The actual fee amount to transfer from user.
+    /// * `max_fee_amount` — The maximum fee the user authorized.
+    /// * `expiration_ledger` — The ledger at which the approval expires.
+    /// * `fee_recipient` — The address receiving the fee (typically the relayer).
     /// * `target_contract` — The contract to invoke (e.g. Router).
     /// * `function_name` — The function to call on the target contract.
     /// * `args` — Arguments to pass to the target function.
@@ -83,8 +107,57 @@ impl PaymasterContract {
     /// # Errors
     /// * `PaymasterError::NotInitialized` — contract not initialized.
     /// * `PaymasterError::TokenNotAllowed` — fee token not whitelisted.
-    /// * `PaymasterError::FeeAmountZero` — max_fee is 0.
-    /// * Any error from the token transfer or target contract is propagated.
+    /// * Any error from the OZ fee-abstraction helpers is propagated.
+    pub fn forward(
+        env: Env,
+        user: Address,
+        fee_token: Address,
+        fee_amount: i128,
+        max_fee_amount: i128,
+        expiration_ledger: u32,
+        fee_recipient: Address,
+        target_contract: Address,
+        function_name: Symbol,
+        args: Vec<Val>,
+    ) -> Val {
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        // Validate initialization
+        if !env.storage().instance().has(&DataKey::Admin) {
+            panic_with_error!(&env, PaymasterError::NotInitialized);
+        }
+
+        // Validate token is on the allowlist
+        if !is_allowed_fee_token(&env, &fee_token) {
+            panic_with_error!(&env, PaymasterError::TokenNotAllowed);
+        }
+
+        // Delegate to OZ's atomic collect-fee-and-invoke
+        collect_fee_and_invoke(
+            &env,
+            &fee_token,
+            fee_amount,
+            max_fee_amount,
+            expiration_ledger,
+            &target_contract,
+            &function_name,
+            &args,
+            &user,
+            &fee_recipient,
+            FeeAbstractionApproval::Eager,
+        )
+    }
+
+    // -----------------------------------------------------------------------
+    // Backwards-compatible wrapper (matches original API)
+    // -----------------------------------------------------------------------
+
+    /// Backwards-compatible entry point matching the original Paymaster API.
+    ///
+    /// This wraps `forward()` with a simplified interface where the relayer
+    /// address is the fee recipient and fee_amount == max_fee.
     pub fn collect_fee_and_invoke(
         env: Env,
         user: Address,
@@ -95,46 +168,21 @@ impl PaymasterContract {
         function_name: Symbol,
         args: Vec<Val>,
     ) -> Val {
-        // Require user authorization for the full operation
-        user.require_auth();
+        // Use max ledger for expiration (backwards compat - no expiration)
+        let expiration_ledger = env.ledger().sequence() + 1000;
 
-        env.storage()
-            .instance()
-            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
-
-        // Validate initialization
-        if !env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, PaymasterError::NotInitialized);
-        }
-
-        // Validate fee amount
-        if max_fee <= 0 {
-            panic_with_error!(&env, PaymasterError::FeeAmountZero);
-        }
-
-        // Validate token is allowed
-        let allowed_tokens: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AllowedFeeTokens)
-            .unwrap();
-
-        if !Self::is_token_allowed(&env, &allowed_tokens, &fee_token) {
-            panic_with_error!(&env, PaymasterError::TokenNotAllowed);
-        }
-
-        // Step 1: Collect fee from user → relayer
-        let token_client = token::Client::new(&env, &fee_token);
-        token_client.transfer(&user, &relayer, &max_fee);
-
-        emit_fee_collected(&env, &user, &relayer, &fee_token, max_fee);
-
-        // Step 2: Invoke the target contract
-        let result: Val = env.invoke_contract(&target_contract, &function_name, args);
-
-        emit_invocation_forwarded(&env, &user, &target_contract, &function_name);
-
-        result
+        Self::forward(
+            env,
+            user,
+            fee_token,
+            max_fee, // fee_amount == max_fee
+            max_fee, // max_fee_amount
+            expiration_ledger,
+            relayer, // fee_recipient = relayer
+            target_contract,
+            function_name,
+            args,
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -153,19 +201,7 @@ impl PaymasterContract {
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let mut allowed_tokens: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AllowedFeeTokens)
-            .unwrap();
-
-        // Don't add duplicates
-        if !Self::is_token_allowed(&env, &allowed_tokens, &token) {
-            allowed_tokens.push_back(token);
-            env.storage()
-                .instance()
-                .set(&DataKey::AllowedFeeTokens, &allowed_tokens);
-        }
+        set_allowed_fee_token(&env, &token, true);
     }
 
     /// Remove a token from the allowed fee token whitelist.
@@ -180,38 +216,16 @@ impl PaymasterContract {
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
-        let allowed_tokens: Vec<Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AllowedFeeTokens)
-            .unwrap();
-
-        let mut new_tokens: Vec<Address> = Vec::new(&env);
-        for t in allowed_tokens.iter() {
-            if t != token {
-                new_tokens.push_back(t);
-            }
-        }
-
-        env.storage()
-            .instance()
-            .set(&DataKey::AllowedFeeTokens, &new_tokens);
+        set_allowed_fee_token(&env, &token, false);
     }
 
     // -----------------------------------------------------------------------
     // Queries
     // -----------------------------------------------------------------------
 
-    /// Returns the list of currently accepted fee tokens.
-    pub fn get_fee_tokens(env: Env) -> Vec<Address> {
-        env.storage()
-            .instance()
-            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
-
-        env.storage()
-            .instance()
-            .get(&DataKey::AllowedFeeTokens)
-            .unwrap_or(Vec::new(&env))
+    /// Check if a specific token is in the allowed fee token list.
+    pub fn is_fee_token_allowed(env: Env, token: Address) -> bool {
+        is_allowed_fee_token(&env, &token)
     }
 
     /// Returns the admin address.
@@ -220,8 +234,23 @@ impl PaymasterContract {
     }
 
     // -----------------------------------------------------------------------
-    // Admin: Upgrade
+    // Admin: Sweep & Upgrade
     // -----------------------------------------------------------------------
+
+    /// Sweep accumulated fee tokens to a recipient address.
+    ///
+    /// # Auth
+    /// Requires admin authorization.
+    pub fn sweep(env: Env, token: Address, to: Address) {
+        let admin: Address = Self::require_admin(&env);
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        sweep_token(&env, &token, &to);
+    }
 
     /// Upgrade the contract WASM bytecode.
     ///
@@ -246,17 +275,6 @@ impl PaymasterContract {
             .instance()
             .get(&DataKey::Admin)
             .unwrap_or_else(|| panic_with_error!(env, PaymasterError::NotInitialized))
-    }
-
-    /// Check if a token is in the allowed list.
-    fn is_token_allowed(env: &Env, allowed: &Vec<Address>, token: &Address) -> bool {
-        for t in allowed.iter() {
-            if &t == token {
-                return true;
-            }
-        }
-        let _ = env; // suppress unused warning
-        false
     }
 }
 

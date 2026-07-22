@@ -26,13 +26,21 @@ use soroban_sdk::{
 const ONE_TOKEN: i128 = 10_000_000; // 1e7
 
 /// Set up a test environment with a token and funded sender.
-fn setup_test() -> (Env, Address, Address, Address, Address, TokenClient<'static>) {
+fn setup_test() -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    Address,
+    TokenClient<'static>,
+) {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
     env.ledger().set(LedgerInfo {
         timestamp: 1000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 100,
         network_id: Default::default(),
         base_reserve: 10,
@@ -74,6 +82,7 @@ fn get_client<'a>(env: &Env, contract_id: &Address) -> LockupContractClient<'a> 
 #[test]
 fn test_initialize() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(LockupContract, ());
@@ -85,6 +94,7 @@ fn test_initialize() {
 #[should_panic(expected = "Error(Contract, #108)")] // AlreadyInitialized
 fn test_initialize_twice_fails() {
     let env = Env::default();
+    env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(LockupContract, ());
@@ -212,7 +222,7 @@ fn test_linear_vesting_no_cliff() {
     // Advance to 50% (t=1500)
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -252,7 +262,7 @@ fn test_vesting_with_cliff() {
     // Before cliff (t=1200): only start_unlock_amount
     env.ledger().set(LedgerInfo {
         timestamp: 1200,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 120,
         network_id: Default::default(),
         base_reserve: 10,
@@ -265,7 +275,7 @@ fn test_vesting_with_cliff() {
     // At cliff (t=1500): start + cliff = 30 tokens
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -278,7 +288,7 @@ fn test_vesting_with_cliff() {
     // Half way from cliff to end (t=1750): 30 + 70*250/500 = 30 + 35 = 65
     env.ledger().set(LedgerInfo {
         timestamp: 1750,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 175,
         network_id: Default::default(),
         base_reserve: 10,
@@ -291,7 +301,7 @@ fn test_vesting_with_cliff() {
     // At end (t=2000): all 100 tokens
     env.ledger().set(LedgerInfo {
         timestamp: 2000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 200,
         network_id: Default::default(),
         base_reserve: 10,
@@ -328,7 +338,7 @@ fn test_granularity() {
     // At t=1050: only 0 tokens vested (floor(50/100) = 0 steps)
     env.ledger().set(LedgerInfo {
         timestamp: 1050,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 105,
         network_id: Default::default(),
         base_reserve: 10,
@@ -341,7 +351,7 @@ fn test_granularity() {
     // At t=1100: 10 tokens (floor(100/100) * 100 * 100 / 1000 = 10)
     env.ledger().set(LedgerInfo {
         timestamp: 1100,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -354,7 +364,7 @@ fn test_granularity() {
     // At t=1150: still 10 tokens (floor(150/100) = 1 step)
     env.ledger().set(LedgerInfo {
         timestamp: 1150,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 115,
         network_id: Default::default(),
         base_reserve: 10,
@@ -367,7 +377,7 @@ fn test_granularity() {
     // At t=1500: 50 tokens (floor(500/100) * 100 * 100 / 1000 = 50)
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -406,7 +416,7 @@ fn test_withdraw() {
     // Advance to 50% vested
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -447,7 +457,7 @@ fn test_withdraw_max() {
 
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -485,7 +495,7 @@ fn test_withdraw_depletes_stream() {
     // Advance past end
     env.ledger().set(LedgerInfo {
         timestamp: 3000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 300,
         network_id: Default::default(),
         base_reserve: 10,
@@ -524,7 +534,7 @@ fn test_withdraw_overdraw_fails() {
 
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -560,7 +570,7 @@ fn test_withdraw_wrong_caller_fails() {
 
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -603,7 +613,7 @@ fn test_cancel() {
     // Advance to 30% vested
     env.ledger().set(LedgerInfo {
         timestamp: 1300,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 130,
         network_id: Default::default(),
         base_reserve: 10,
@@ -652,7 +662,7 @@ fn test_cancel_then_withdraw() {
     // Advance to 40% vested
     env.ledger().set(LedgerInfo {
         timestamp: 1400,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 140,
         network_id: Default::default(),
         base_reserve: 10,
@@ -809,7 +819,7 @@ fn test_status_lifecycle() {
     // During vesting: Streaming (warm)
     env.ledger().set(LedgerInfo {
         timestamp: 1500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 150,
         network_id: Default::default(),
         base_reserve: 10,
@@ -823,7 +833,7 @@ fn test_status_lifecycle() {
     // After end: Settled (cold)
     env.ledger().set(LedgerInfo {
         timestamp: 3000,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 300,
         network_id: Default::default(),
         base_reserve: 10,
@@ -870,7 +880,7 @@ fn test_full_lifecycle() {
     // 2. Before cliff — only start_unlock_amount
     env.ledger().set(LedgerInfo {
         timestamp: 1100,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 110,
         network_id: Default::default(),
         base_reserve: 10,
@@ -887,7 +897,7 @@ fn test_full_lifecycle() {
     // 4. After cliff — unlock amounts + linear portion
     env.ledger().set(LedgerInfo {
         timestamp: 1600,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 160,
         network_id: Default::default(),
         base_reserve: 10,
@@ -908,7 +918,7 @@ fn test_full_lifecycle() {
     // 6. After end — fully settled
     env.ledger().set(LedgerInfo {
         timestamp: 2500,
-        protocol_version: 22,
+        protocol_version: 25,
         sequence_number: 250,
         network_id: Default::default(),
         base_reserve: 10,

@@ -68,9 +68,11 @@ pub fn get_stream(env: &Env, stream_id: u64) -> Option<LockupStream> {
     let key = DataKey::LockupStream(stream_id);
     let result: Option<LockupStream> = env.storage().persistent().get(&key);
     if result.is_some() {
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_LEDGERS);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_LEDGERS,
+        );
     }
     result
 }
@@ -85,9 +87,11 @@ pub fn get_aggregate_balance(env: &Env, token: &Address) -> i128 {
     let result = env.storage().persistent().get(&key).unwrap_or(0i128);
     if result != 0 {
         // Extend TTL on read to prevent archival (M-1)
-        env.storage()
-            .persistent()
-            .extend_ttl(&key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_LEDGERS);
+        env.storage().persistent().extend_ttl(
+            &key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_LEDGERS,
+        );
     }
     result
 }

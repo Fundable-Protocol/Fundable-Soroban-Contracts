@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
+stellar-fee-abstraction = { workspace = true }
 shared = { path = "../../packages/shared" }
 
 [dev-dependencies]

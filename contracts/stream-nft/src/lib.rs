@@ -24,9 +24,10 @@ impl StreamNftContract {
         env.storage()
             .instance()
             .set(&DataKey::TokenMetadata(Symbol::new(&env, "name")), &name);
-        env.storage()
-            .instance()
-            .set(&DataKey::TokenMetadata(Symbol::new(&env, "symbol")), &symbol);
+        env.storage().instance().set(
+            &DataKey::TokenMetadata(Symbol::new(&env, "symbol")),
+            &symbol,
+        );
 
         env.storage()
             .instance()
@@ -45,13 +46,7 @@ impl StreamNftContract {
 
     /// Mint a new NFT representing a stream.
     /// Only the admin (Router) can mint.
-    pub fn mint(
-        env: Env,
-        to: Address,
-        stream_type: StreamType,
-        stream_id: u64,
-        token_id: i128,
-    ) {
+    pub fn mint(env: Env, to: Address, stream_type: StreamType, stream_id: u64, token_id: i128) {
         let admin: Address = env
             .storage()
             .instance()
@@ -86,11 +81,7 @@ impl StreamNftContract {
 
         // Update balance
         let balance_key = DataKey::NftBalance(to.clone());
-        let current_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&balance_key)
-            .unwrap_or(0);
+        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         env.storage()
             .persistent()
             .set(&balance_key, &(current_balance + 1));
@@ -105,7 +96,7 @@ impl StreamNftContract {
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
 
         // Event (mint = from zero address)
-        // Since we can't easily construct a zero address in Soroban without a byte array, 
+        // Since we can't easily construct a zero address in Soroban without a byte array,
         // we'll just emit transfer from the admin/contract itself or skip the 'from' and emit special mint.
         // For simplicity, we just emit nft_transfer where from == admin.
         emit_nft_transfer(&env, &admin, &to, token_id);
@@ -133,11 +124,7 @@ impl StreamNftContract {
 
         // Update balance
         let balance_key = DataKey::NftBalance(owner.clone());
-        let current_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&balance_key)
-            .unwrap_or(0);
+        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
         if current_balance > 0 {
             env.storage()
                 .persistent()
@@ -199,11 +186,7 @@ impl StreamNftContract {
         }
 
         let to_balance_key = DataKey::NftBalance(to.clone());
-        let to_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&to_balance_key)
-            .unwrap_or(0);
+        let to_balance: i128 = env.storage().persistent().get(&to_balance_key).unwrap_or(0);
         env.storage()
             .persistent()
             .set(&to_balance_key, &(to_balance + 1));
