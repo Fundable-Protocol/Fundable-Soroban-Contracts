@@ -50,10 +50,10 @@ pub struct PaymasterContract;
 #[contractimpl]
 impl PaymasterContract {
     // -----------------------------------------------------------------------
-    // Initialization
+    // Construction
     // -----------------------------------------------------------------------
 
-    /// Initialize the Paymaster with an admin and an initial list of
+    /// Atomically initialize the Paymaster with an admin and an initial list of
     /// allowed fee tokens.
     ///
     /// # Arguments
@@ -61,13 +61,7 @@ impl PaymasterContract {
     /// * `allowed_fee_tokens` — Initial list of token addresses accepted
     ///   for fee payment.
     ///
-    /// # Errors
-    /// * `PaymasterError::AlreadyInitialized` — if called more than once.
-    pub fn initialize(env: Env, admin: Address, allowed_fee_tokens: Vec<Address>) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, PaymasterError::AlreadyInitialized);
-        }
-
+    pub fn __constructor(env: Env, admin: Address, allowed_fee_tokens: Vec<Address>) {
         env.storage().instance().set(&DataKey::Admin, &admin);
 
         // Register each token in the OZ fee-abstraction allowlist

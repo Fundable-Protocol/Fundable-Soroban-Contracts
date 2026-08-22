@@ -14,12 +14,8 @@ pub struct StreamNftContract;
 
 #[contractimpl]
 impl StreamNftContract {
-    /// Initialize the NFT contract.
-    pub fn initialize(env: Env, admin: Address, name: String, symbol: String) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, NftError::AlreadyInitialized);
-        }
-
+    /// Atomically initialize the NFT contract during deployment.
+    pub fn __constructor(env: Env, admin: Address, name: String, symbol: String) {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
@@ -72,7 +68,7 @@ impl StreamNftContract {
         let data_key = DataKey::TokenStreamData(token_id);
         env.storage()
             .persistent()
-            .set(&data_key, &(stream_type, stream_id));
+            .set(&data_key, &(stream_type.clone(), stream_id));
         env.storage().persistent().extend_ttl(
             &data_key,
             PERSISTENT_TTL_THRESHOLD,
@@ -99,49 +95,7 @@ impl StreamNftContract {
         // Since we can't easily construct a zero address in Soroban without a byte array,
         // we'll just emit transfer from the admin/contract itself or skip the 'from' and emit special mint.
         // For simplicity, we just emit nft_transfer where from == admin.
-        emit_nft_transfer(&env, &admin, &to, token_id);
-    }
-
-    /// Burn an NFT (e.g. when stream is depleted or voided).
-    /// Only admin (Router) can burn.
-    pub fn burn(env: Env, token_id: i128) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-
-        let owner_key = DataKey::TokenOwner(token_id);
-        let owner: Address = env
-            .storage()
-            .persistent()
-            .get(&owner_key)
-            .unwrap_or_else(|| panic_with_error!(&env, NftError::TokenNotFound));
-
-        // Remove owner
-        env.storage().persistent().remove(&owner_key);
-
-        // Remove stream data
-        let data_key = DataKey::TokenStreamData(token_id);
-        env.storage().persistent().remove(&data_key);
-
-        // Update balance
-        let balance_key = DataKey::NftBalance(owner.clone());
-        let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
-        if current_balance > 0 {
-            env.storage()
-                .persistent()
-                .set(&balance_key, &(current_balance - 1));
-            env.storage().persistent().extend_ttl(
-                &balance_key,
-                PERSISTENT_TTL_THRESHOLD,
-                PERSISTENT_TTL_LEDGERS,
-            );
-        }
-
-        env.storage()
-            .instance()
-            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
-
-        // Event
-        emit_nft_transfer(&env, &owner, &admin, token_id);
+        emit_nft_transfer(&env, &admin, &to, token_id, &stream_type, stream_id);
     }
 
     /// Transfer an NFT to a new owner.
@@ -158,6 +112,13 @@ impl StreamNftContract {
         if owner != from {
             panic_with_error!(&env, NftError::NotAuthorized);
         }
+
+        let data_key = DataKey::TokenStreamData(token_id);
+        let (stream_type, core_stream_id): (StreamType, u64) = env
+            .storage()
+            .persistent()
+            .get(&data_key)
+            .unwrap_or_else(|| panic_with_error!(&env, NftError::TokenNotFound));
 
         // Set new owner
         env.storage().persistent().set(&owner_key, &to);
@@ -197,14 +158,20 @@ impl StreamNftContract {
         );
 
         // Bump stream data TTL
-        let data_key = DataKey::TokenStreamData(token_id);
         env.storage().persistent().extend_ttl(
             &data_key,
             PERSISTENT_TTL_THRESHOLD,
             PERSISTENT_TTL_LEDGERS,
         );
 
-        emit_nft_transfer(&env, &from, &to, token_id);
+        emit_nft_transfer(
+            &env,
+            &from,
+            &to,
+            token_id,
+            &stream_type,
+            core_stream_id,
+        );
     }
 
     /// Get the owner of an NFT.
@@ -254,6 +221,21 @@ impl StreamNftContract {
             PERSISTENT_TTL_LEDGERS,
         );
         data
+    }
+
+    /// V1 Stream NFTs are universally transferable.
+    pub fn is_transferable(env: Env, token_id: i128) -> bool {
+        // Require an existing receipt so callers cannot treat arbitrary IDs as streams.
+        let owner_key = DataKey::TokenOwner(token_id);
+        if !env.storage().persistent().has(&owner_key) {
+            panic_with_error!(&env, NftError::TokenNotFound);
+        }
+        env.storage().persistent().extend_ttl(
+            &owner_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_LEDGERS,
+        );
+        true
     }
 
     /// Get token name

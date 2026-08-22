@@ -94,12 +94,11 @@ fn setup_test() -> (
     // Mint fee tokens to the user (10,000 tokens)
     sac_admin.mint(&user, &(10_000 * ONE_TOKEN));
 
-    // Register and initialize the Paymaster contract
-    let contract_id = env.register(PaymasterContract, ());
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
     let allowed_tokens = Vec::from_array(&env, [fee_token.clone()]);
-    client.initialize(&admin, &allowed_tokens);
+    let contract_id = env.register(
+        PaymasterContract,
+        PaymasterContractArgs::__constructor(&admin, &allowed_tokens),
+    );
 
     (
         env,
@@ -117,34 +116,20 @@ fn setup_test() -> (
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_initialize() {
+fn test_constructor_sets_admin() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(PaymasterContract, ());
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
     let allowed_tokens: Vec<Address> = Vec::new(&env);
-    client.initialize(&admin, &allowed_tokens);
+    let contract_id = env.register(
+        PaymasterContract,
+        PaymasterContractArgs::__constructor(&admin, &allowed_tokens),
+    );
+    let client = PaymasterContractClient::new(&env, &contract_id);
 
     // Should succeed — verify admin is set
     assert_eq!(client.get_admin(), admin);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #401)")] // AlreadyInitialized
-fn test_initialize_twice_fails() {
-    let env = Env::default();
-    env.ledger().set_protocol_version(25);
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let contract_id = env.register(PaymasterContract, ());
-    let client = PaymasterContractClient::new(&env, &contract_id);
-
-    let allowed_tokens: Vec<Address> = Vec::new(&env);
-    client.initialize(&admin, &allowed_tokens);
-    client.initialize(&admin, &allowed_tokens); // Should panic
 }
 
 // ---------------------------------------------------------------------------
@@ -303,7 +288,9 @@ fn test_forward_rejects_disallowed_fee_token() {
     let client = PaymasterContractClient::new(&env, &contract_id);
     let target_id = env.register(target_contract::TargetContract, ());
     let token_admin = Address::generate(&env);
-    let disallowed_token = env.register_stellar_asset_contract_v2(token_admin).address();
+    let disallowed_token = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
     let args: Vec<Val> = Vec::new(&env);
 
     client.forward(

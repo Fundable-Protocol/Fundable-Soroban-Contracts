@@ -42,6 +42,39 @@ pub enum StreamType {
     Lockup = 1,
 }
 
+/// Canonical lifecycle exposed by the Router to every product surface.
+///
+/// Core engines retain their more detailed accounting states; the Router maps
+/// those states into this stable cross-engine vocabulary.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CanonicalStreamStatus {
+    Pending = 0,
+    Active = 1,
+    Paused = 2,
+    Canceled = 3,
+    Completed = 4,
+    Failed = 5,
+}
+
+/// Stable public metadata for a Stream NFT and its underlying core stream.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StreamMetadata {
+    /// Public, deployment-scoped stream identifier.
+    pub token_id: i128,
+    /// Current holder of withdrawal and NFT-owner Flow void rights.
+    pub owner: Address,
+    /// Core engine kind.
+    pub stream_type: StreamType,
+    /// Internal identifier assigned by the selected core engine.
+    pub core_stream_id: u64,
+    /// Canonical cross-engine lifecycle state.
+    pub status: CanonicalStreamStatus,
+    /// V1 streams are universally transferable.
+    pub transferable: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Flow Stream
 // ---------------------------------------------------------------------------

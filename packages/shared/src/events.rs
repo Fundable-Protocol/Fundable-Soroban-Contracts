@@ -8,6 +8,7 @@
 //! Soroban events are emitted via `env.events().publish(topics, data)`.
 //! Topics are limited to 4 elements and data must be a single value.
 
+use crate::types::StreamType;
 use soroban_sdk::{Address, Env, Symbol};
 
 // ---------------------------------------------------------------------------
@@ -181,9 +182,81 @@ pub fn emit_lockup_renounced(env: &Env, stream_id: u64) {
 // ---------------------------------------------------------------------------
 
 /// Emit when an NFT is transferred (or minted/burned).
-pub fn emit_nft_transfer(env: &Env, from: &Address, to: &Address, token_id: i128) {
-    let topics = (Symbol::new(env, "transfer"), from.clone(), to.clone());
-    env.events().publish(topics, token_id);
+pub fn emit_nft_transfer(
+    env: &Env,
+    from: &Address,
+    to: &Address,
+    token_id: i128,
+    stream_type: &StreamType,
+    core_stream_id: u64,
+) {
+    let topics = (Symbol::new(env, "transfer"), token_id);
+    let data = (
+        from.clone(),
+        to.clone(),
+        stream_type.clone(),
+        core_stream_id,
+    );
+    env.events().publish(topics, data);
+}
+
+// ---------------------------------------------------------------------------
+// Router Events
+// ---------------------------------------------------------------------------
+
+/// Emit the canonical mapping created between a public NFT ID and core ID.
+pub fn emit_stream_created(
+    env: &Env,
+    token_id: i128,
+    core_stream_id: u64,
+    stream_type: &StreamType,
+    sender: &Address,
+    owner: &Address,
+    token: &Address,
+) {
+    let topics = (Symbol::new(env, "stream_created"), token_id, core_stream_id);
+    let data = (
+        stream_type.clone(),
+        sender.clone(),
+        owner.clone(),
+        token.clone(),
+    );
+    env.events().publish(topics, data);
+}
+
+/// Emit a Router withdrawal with both public and internal identifiers.
+pub fn emit_stream_withdrawn(
+    env: &Env,
+    token_id: i128,
+    core_stream_id: u64,
+    stream_type: &StreamType,
+    owner: &Address,
+    to: &Address,
+    amount: i128,
+) {
+    let topics = (
+        Symbol::new(env, "stream_withdrawn"),
+        token_id,
+        core_stream_id,
+    );
+    let data = (
+        stream_type.clone(),
+        owner.clone(),
+        to.clone(),
+        amount,
+    );
+    env.events().publish(topics, data);
+}
+
+/// Emit an NFT-owner Flow void with both public and internal identifiers.
+pub fn emit_stream_voided(
+    env: &Env,
+    token_id: i128,
+    core_stream_id: u64,
+    owner: &Address,
+) {
+    let topics = (Symbol::new(env, "stream_voided"), token_id, core_stream_id);
+    env.events().publish(topics, owner.clone());
 }
 
 // ---------------------------------------------------------------------------

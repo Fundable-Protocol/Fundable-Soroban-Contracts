@@ -4,48 +4,62 @@ use super::*;
 use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env, String};
 
 // Import the actual contract types to register them in tests
-use flow::FlowContract;
-use lockup::LockupContract;
+use flow::{FlowContract, FlowContractArgs};
+use lockup::{LockupContract, LockupContractArgs};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
-use stream_nft::StreamNftContract;
+use stream_nft::{StreamNftContract, StreamNftContractArgs};
 
-#[test]
-fn test_initialize() {
-    let env = Env::default();
-    env.ledger().set_protocol_version(25);
-    env.mock_all_auths();
-
-    let router_id = env.register(RouterContract, ());
-    let client = RouterContractClient::new(&env, &router_id);
-
-    let admin = Address::generate(&env);
-    let flow = Address::generate(&env);
-    let lockup = Address::generate(&env);
-    let nft = Address::generate(&env);
-
-    client.initialize(&admin, &flow, &lockup, &nft);
-
-    // Initialized correctly without panic
+fn register_protocol(env: &Env, admin: &Address) -> (Address, Address, Address, Address) {
+    let flow_id = env.register(FlowContract, FlowContractArgs::__constructor(admin));
+    let lockup_id = env.register(LockupContract, LockupContractArgs::__constructor(admin));
+    let router_id = env.register(RouterContract, RouterContractArgs::__constructor(admin));
+    let name = String::from_str(env, "Fundable Stream NFT");
+    let symbol = String::from_str(env, "FSNFT");
+    let nft_id = env.register(
+        StreamNftContract,
+        StreamNftContractArgs::__constructor(&router_id, &name, &symbol),
+    );
+    RouterContractClient::new(env, &router_id).configure(&flow_id, &lockup_id, &nft_id);
+    (flow_id, lockup_id, nft_id, router_id)
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #301)")]
-fn test_initialize_twice_fails() {
+fn test_constructor_and_configure() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
-    let router_id = env.register(RouterContract, ());
-    let client = RouterContractClient::new(&env, &router_id);
-
     let admin = Address::generate(&env);
+    let router_id = env.register(RouterContract, RouterContractArgs::__constructor(&admin));
+    let client = RouterContractClient::new(&env, &router_id);
     let flow = Address::generate(&env);
     let lockup = Address::generate(&env);
     let nft = Address::generate(&env);
 
-    client.initialize(&admin, &flow, &lockup, &nft);
-    client.initialize(&admin, &flow, &lockup, &nft);
+    client.configure(&flow, &lockup, &nft);
+
+    let auths = env.auths();
+    assert_eq!(auths.len(), 1);
+    assert_eq!(auths[0].0, admin);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #305)")]
+fn test_configure_twice_fails() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let router_id = env.register(RouterContract, RouterContractArgs::__constructor(&admin));
+    let client = RouterContractClient::new(&env, &router_id);
+    let flow = Address::generate(&env);
+    let lockup = Address::generate(&env);
+    let nft = Address::generate(&env);
+
+    client.configure(&flow, &lockup, &nft);
+    client.configure(&flow, &lockup, &nft);
 }
 
 #[test]
@@ -61,25 +75,10 @@ fn test_end_to_end_flow_stream() {
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
-    // 2. Deploy core contracts
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
-    // Initialize core contracts
+    // 2. Deploy and configure core contracts
     let admin = Address::generate(&env);
-    flow_client::Client::new(&env, &flow_id).initialize(&admin);
-    lockup_client::Client::new(&env, &lockup_id).initialize(&admin);
-    nft_client::Client::new(&env, &nft_id).initialize(
-        &router_id,
-        &String::from_str(&env, "Fundable Stream NFT"),
-        &String::from_str(&env, "FSNFT"),
-    );
-
-    // Initialize router
+    let (flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     // 3. Setup users
     let sender = Address::generate(&env);
@@ -113,6 +112,7 @@ fn test_end_to_end_flow_stream() {
         &rate_per_second,
         &7, // decimals
         &start_time,
+        &(100 * decimals as i128),
     );
 
     assert_eq!(token_nft_id, 1);
@@ -122,17 +122,25 @@ fn test_end_to_end_flow_stream() {
     assert_eq!(local_nft_client.owner_of(&token_nft_id), recipient);
     assert_eq!(local_nft_client.balance(&recipient), 1);
 
-    // 5. Deposit tokens into the flow stream
-    // Sender must deposit into the flow stream directly, as creation does not fund it.
+    // 5. Verify the public-to-core mapping and atomic initial funding.
     let (stream_type, stream_id) = local_nft_client.get_stream_data(&token_nft_id);
     assert_eq!(stream_type as u32, nft_client::StreamType::Flow as u32);
     assert_eq!(stream_id, 1);
-
-    flow_client::Client::new(&env, &flow_id).deposit(
-        &stream_id,
-        &sender,
-        &(100 * decimals as i128),
+    assert_eq!(
+        flow_client::Client::new(&env, &flow_id).get_balance(&stream_id),
+        100 * decimals as i128
     );
+    assert_eq!(router_client.owner_of(&token_nft_id), recipient);
+    assert_eq!(router_client.stream_type(&token_nft_id), StreamType::Flow);
+    assert_eq!(router_client.core_stream_id(&token_nft_id), stream_id);
+    assert_eq!(
+        router_client.status_of(&token_nft_id),
+        CanonicalStreamStatus::Active
+    );
+    let metadata = router_client.get_stream(&token_nft_id);
+    assert_eq!(metadata.token_id, token_nft_id);
+    assert_eq!(metadata.core_stream_id, stream_id);
+    assert!(metadata.transferable);
 
     // 6. Fast forward time and withdraw
     env.ledger().set(soroban_sdk::testutils::LedgerInfo {
@@ -171,25 +179,10 @@ fn test_end_to_end_lockup_stream() {
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
-    // 2. Deploy core contracts
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
-    // Initialize core contracts
+    // 2. Deploy and configure core contracts
     let admin = Address::generate(&env);
-    flow_client::Client::new(&env, &flow_id).initialize(&admin);
-    lockup_client::Client::new(&env, &lockup_id).initialize(&admin);
-    nft_client::Client::new(&env, &nft_id).initialize(
-        &router_id,
-        &String::from_str(&env, "Fundable Stream NFT"),
-        &String::from_str(&env, "FSNFT"),
-    );
-
-    // Initialize router
+    let (_flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     // 3. Setup users
     let sender = Address::generate(&env);
@@ -271,25 +264,10 @@ fn test_withdraw_fails_if_not_nft_owner() {
     let token_id = sac.address();
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
-    // 2. Deploy core contracts
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
-    // Initialize core contracts
+    // 2. Deploy and configure core contracts
     let admin = Address::generate(&env);
-    flow_client::Client::new(&env, &flow_id).initialize(&admin);
-    lockup_client::Client::new(&env, &lockup_id).initialize(&admin);
-    nft_client::Client::new(&env, &nft_id).initialize(
-        &router_id,
-        &String::from_str(&env, "Fundable Stream NFT"),
-        &String::from_str(&env, "FSNFT"),
-    );
-
-    // Initialize router
+    let (_flow_id, _lockup_id, _nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     // 3. Setup users
     let sender = Address::generate(&env);
@@ -317,6 +295,7 @@ fn test_withdraw_fails_if_not_nft_owner() {
         &(1_000_000_000_000_000_000), // 1e18 rate
         &7,
         &env.ledger().timestamp(),
+        &(100 * decimals as i128),
     );
 
     // Fast forward
@@ -353,23 +332,10 @@ fn test_withdraw_after_nft_transfer() {
     let token_client = TokenClient::new(&env, &token_id);
     let token_admin_client = StellarAssetClient::new(&env, &token_id);
 
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
     let admin = Address::generate(&env);
-    flow_client::Client::new(&env, &flow_id).initialize(&admin);
-    lockup_client::Client::new(&env, &lockup_id).initialize(&admin);
+    let (_flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
     let local_nft_client = nft_client::Client::new(&env, &nft_id);
-    local_nft_client.initialize(
-        &router_id,
-        &String::from_str(&env, "Fundable Stream NFT"),
-        &String::from_str(&env, "FSNFT"),
-    );
-
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     let sender = Address::generate(&env);
     let recipient = Address::generate(&env);
@@ -396,12 +362,6 @@ fn test_withdraw_after_nft_transfer() {
         &(1_000_000_000_000_000_000), // 1e18 rate
         &7,
         &env.ledger().timestamp(),
-    );
-
-    let (_stream_type, stream_id) = local_nft_client.get_stream_data(&token_nft_id);
-    flow_client::Client::new(&env, &flow_id).deposit(
-        &stream_id,
-        &sender,
         &(100 * decimals as i128),
     );
 
@@ -439,14 +399,9 @@ fn test_upgrade() {
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
     let admin = Address::generate(&env);
+    let (_flow_id, _lockup_id, _nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
@@ -464,22 +419,9 @@ fn test_upgrade_nft() {
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
-    let flow_id = env.register(FlowContract, ());
-    let lockup_id = env.register(LockupContract, ());
-    let nft_id = env.register(StreamNftContract, ());
-    let router_id = env.register(RouterContract, ());
-
     let admin = Address::generate(&env);
-
-    // Initialize NFT with Router as admin
-    nft_client::Client::new(&env, &nft_id).initialize(
-        &router_id,
-        &String::from_str(&env, "Fundable Stream NFT"),
-        &String::from_str(&env, "FSNFT"),
-    );
-
+    let (_flow_id, _lockup_id, _nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
-    router_client.initialize(&admin, &flow_id, &lockup_id, &nft_id);
 
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);

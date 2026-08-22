@@ -41,7 +41,7 @@ pub struct LockupContract;
 /// Public API for the Fundable Lockup vesting contract.
 ///
 /// Functions are organized into:
-/// 1. **Admin** — initialize, upgrade, set_admin
+/// 1. **Admin** — constructor, upgrade, set_admin
 /// 2. **Create** — create (with timestamps and optional cliff)
 /// 3. **Mutate** — withdraw, cancel, renounce
 /// 4. **Query** — get_stream, status_of, withdrawable_amount_of, etc.
@@ -51,13 +51,8 @@ impl LockupContract {
     // Admin Functions
     // -----------------------------------------------------------------------
 
-    /// Initialize the contract with an admin address.
-    ///
-    /// Must be called exactly once before any other function.
-    pub fn initialize(env: Env, admin: Address) {
-        if storage::has_admin(&env) {
-            panic_with_error!(&env, LockupError::AlreadyInitialized);
-        }
+    /// Atomically initialize the contract during deployment.
+    pub fn __constructor(env: Env, admin: Address) {
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
         events::emit_admin_initialized(&env, &admin);

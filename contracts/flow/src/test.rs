@@ -70,13 +70,9 @@ fn setup_test() -> (
     // Mint tokens to the sender (1,000,000 tokens)
     sac_admin.mint(&sender, &(1_000_000 * ONE_TOKEN));
 
-    // Register and initialize the Flow contract
-    let contract_id = env.register(FlowContract, ());
-    let client = FlowContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
+    // Register the Flow contract with atomic constructor arguments.
+    let contract_id = env.register(FlowContract, FlowContractArgs::__constructor(&admin));
 
-    // We return the contract address as the `admin` parameter position
-    // and use `client` through the contract_id
     (env, contract_id, sender, recipient, token, token_client)
 }
 
@@ -90,28 +86,14 @@ fn get_client<'a>(env: &Env, contract_id: &Address) -> FlowContractClient<'a> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_initialize() {
+fn test_constructor_sets_admin() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(FlowContract, ());
+    let contract_id = env.register(FlowContract, FlowContractArgs::__constructor(&admin));
     let client = FlowContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-    // Should succeed without panic
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #16)")] // AlreadyInitialized
-fn test_initialize_twice_fails() {
-    let env = Env::default();
-    env.ledger().set_protocol_version(25);
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let contract_id = env.register(FlowContract, ());
-    let client = FlowContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-    client.initialize(&admin); // Should panic
+    client.set_admin(&admin);
 }
 
 // ---------------------------------------------------------------------------

@@ -45,6 +45,36 @@
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                       }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "TokenMetadata"
+                          },
+                          {
+                            "symbol": "name"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "string": "Fundable Stream NFT"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
+                            "symbol": "TokenMetadata"
+                          },
+                          {
+                            "symbol": "symbol"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "string": "FSTRM"
+                      }
                     }
                   ]
                 }

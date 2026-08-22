@@ -162,10 +162,18 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
         panic_with_error!(env, LockupError::InvalidTimeRange);
     }
 
-    // Validate: unlock amounts don't exceed total
-    let unlock_sum = params.start_unlock_amount + params.cliff_unlock_amount;
+    // Validate: unlock amounts are nonnegative and don't exceed total.
+    // Negative values can offset a positive value here and later corrupt
+    // vested/refundable accounting in the pooled token balance.
+    if params.start_unlock_amount < 0 || params.cliff_unlock_amount < 0 {
+        panic_with_error!(env, LockupError::InvalidUnlockAmount);
+    }
+    let unlock_sum = params
+        .start_unlock_amount
+        .checked_add(params.cliff_unlock_amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::InvalidUnlockAmount));
     if unlock_sum > params.total_amount {
-        panic_with_error!(env, LockupError::AmountZero);
+        panic_with_error!(env, LockupError::InvalidUnlockAmount);
     }
 
     // Validate: granularity must be > 0, default to 1

@@ -40,7 +40,7 @@ pub struct FlowContract;
 /// Public API for the Fundable Flow streaming contract.
 ///
 /// Functions are organized into:
-/// 1. **Admin** — initialize, upgrade, set_admin
+/// 1. **Admin** — constructor, upgrade, set_admin
 /// 2. **Create** — create, create_and_deposit
 /// 3. **Mutate** — deposit, withdraw, pause, restart, adjust_rate, refund, void
 /// 4. **Query** — get_stream, status_of, covered_debt_of, etc.
@@ -50,13 +50,8 @@ impl FlowContract {
     // Admin Functions
     // -----------------------------------------------------------------------
 
-    /// Initialize the contract with an admin address.
-    ///
-    /// Must be called exactly once before any other function.
-    pub fn initialize(env: Env, admin: Address) {
-        if storage::has_admin(&env) {
-            panic_with_error!(&env, FlowError::AlreadyInitialized);
-        }
+    /// Atomically initialize the contract during deployment.
+    pub fn __constructor(env: Env, admin: Address) {
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
         events::emit_admin_initialized(&env, &admin);

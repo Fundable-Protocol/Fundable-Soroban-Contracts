@@ -102,6 +102,8 @@ pub enum LockupError {
     NotInitialized = 109,
     /// Sender and recipient must be different addresses.
     SenderEqualsRecipient = 110,
+    /// Start and cliff unlock amounts must be nonnegative and fit in total amount.
+    InvalidUnlockAmount = 111,
 }
 
 // ---------------------------------------------------------------------------
@@ -134,4 +136,6 @@ pub enum RouterError {
     NotInitialized = 302,
     NotAuthorized = 303,
     InvalidStreamType = 304,
+    /// Core contract addresses were already configured.
+    AlreadyConfigured = 305,
 }

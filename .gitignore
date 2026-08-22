@@ -25,5 +25,5 @@ Thumbs.db
 *.wasm
 !contracts/**/wasm/*.wasm
 
-/docs
-
+/docs/*
+!/docs/stellar_streams_mainnet_readiness.md

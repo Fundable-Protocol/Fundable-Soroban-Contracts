@@ -63,10 +63,8 @@ fn setup_test() -> (
     // Mint tokens to the sender (1,000,000 tokens)
     sac_admin.mint(&sender, &(1_000_000 * ONE_TOKEN));
 
-    // Register and initialize the Lockup contract
-    let contract_id = env.register(LockupContract, ());
-    let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
+    // Register the Lockup contract with atomic constructor arguments.
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
 
     (env, contract_id, sender, recipient, token, token_client)
 }
@@ -80,27 +78,14 @@ fn get_client<'a>(env: &Env, contract_id: &Address) -> LockupContractClient<'a> 
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_initialize() {
+fn test_constructor_sets_admin() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(LockupContract, ());
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
     let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #108)")] // AlreadyInitialized
-fn test_initialize_twice_fails() {
-    let env = Env::default();
-    env.ledger().set_protocol_version(25);
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let contract_id = env.register(LockupContract, ());
-    let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-    client.initialize(&admin);
+    client.set_admin(&admin);
 }
 
 // ---------------------------------------------------------------------------
@@ -996,6 +981,69 @@ fn test_create_invalid_time_range() {
         cliff_time: 0,
         start_unlock_amount: 0,
         cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_negative_start_unlock_amount() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: -ONE_TOKEN,
+        cliff_unlock_amount: 10 * ONE_TOKEN,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_negative_cliff_offset_attack() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: 150 * ONE_TOKEN,
+        cliff_unlock_amount: -100 * ONE_TOKEN,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_unlock_sum_overflow() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: i128::MAX,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: i128::MAX,
+        cliff_unlock_amount: 1,
         granularity: 1,
         cancelable: true,
     };
