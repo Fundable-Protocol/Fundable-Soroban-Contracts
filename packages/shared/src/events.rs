@@ -116,6 +116,7 @@ pub fn emit_flow_voided(
 // ---------------------------------------------------------------------------
 
 /// Emit when a new Lockup stream is created.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_lockup_created(
     env: &Env,
     stream_id: u64,
@@ -239,22 +240,12 @@ pub fn emit_stream_withdrawn(
         token_id,
         core_stream_id,
     );
-    let data = (
-        stream_type.clone(),
-        owner.clone(),
-        to.clone(),
-        amount,
-    );
+    let data = (stream_type.clone(), owner.clone(), to.clone(), amount);
     env.events().publish(topics, data);
 }
 
 /// Emit an NFT-owner Flow void with both public and internal identifiers.
-pub fn emit_stream_voided(
-    env: &Env,
-    token_id: i128,
-    core_stream_id: u64,
-    owner: &Address,
-) {
+pub fn emit_stream_voided(env: &Env, token_id: i128, core_stream_id: u64, owner: &Address) {
     let topics = (Symbol::new(env, "stream_voided"), token_id, core_stream_id);
     env.events().publish(topics, owner.clone());
 }

@@ -23,6 +23,7 @@
 //! - TTL extended on every storage access (SKILL.md §3).
 
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
 use shared::errors::FlowError;

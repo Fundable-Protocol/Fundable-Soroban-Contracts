@@ -1,7 +1,11 @@
-#![cfg(test)]
+extern crate std;
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env, String};
+use soroban_sdk::testutils::Events as _;
+use soroban_sdk::{
+    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
+    xdr, Address, Env, IntoVal, String, Symbol, TryFromVal, Val, Vec,
+};
 
 // Import the actual contract types to register them in tests
 use flow::{FlowContract, FlowContractArgs};
@@ -9,6 +13,49 @@ use lockup::{LockupContract, LockupContractArgs};
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::token::StellarAssetClient;
 use stream_nft::{StreamNftContract, StreamNftContractArgs};
+
+fn invocation(
+    env: &Env,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+    sub_invocations: std::vec::Vec<AuthorizedInvocation>,
+) -> AuthorizedInvocation {
+    AuthorizedInvocation {
+        function: AuthorizedFunction::Contract((
+            contract.clone(),
+            Symbol::new(env, function),
+            args,
+        )),
+        sub_invocations,
+    }
+}
+
+fn has_dual_id_event(
+    env: &Env,
+    contract: &Address,
+    event_name: &str,
+    token_id: i128,
+    core_stream_id: u64,
+) -> bool {
+    let event_symbol = xdr::ScVal::try_from_val(env, &Symbol::new(env, event_name)).unwrap();
+    let token_val: Val = token_id.into_val(env);
+    let core_val: Val = core_stream_id.into_val(env);
+    let token_value = xdr::ScVal::try_from_val(env, &token_val).unwrap();
+    let core_value = xdr::ScVal::try_from_val(env, &core_val).unwrap();
+    env.events()
+        .all()
+        .filter_by_contract(contract)
+        .events()
+        .iter()
+        .any(|event| {
+            let xdr::ContractEventBody::V0(body) = &event.body;
+            body.topics.len() >= 3
+                && body.topics[0] == event_symbol
+                && body.topics[1] == token_value
+                && body.topics[2] == core_value
+        })
+}
 
 fn register_protocol(env: &Env, admin: &Address) -> (Address, Address, Address, Address) {
     let flow_id = env.register(FlowContract, FlowContractArgs::__constructor(admin));
@@ -115,7 +162,58 @@ fn test_end_to_end_flow_stream() {
         &(100 * decimals as i128),
     );
 
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            sender.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "create_flow_stream",
+                (
+                    &sender,
+                    &recipient,
+                    &token_id,
+                    &rate_per_second,
+                    7_u32,
+                    start_time,
+                    100 * decimals as i128,
+                )
+                    .into_val(&env),
+                std::vec![invocation(
+                    &env,
+                    &flow_id,
+                    "create_and_deposit",
+                    (
+                        &sender,
+                        &router_id,
+                        &token_id,
+                        &rate_per_second,
+                        7_u32,
+                        start_time,
+                        100 * decimals as i128,
+                    )
+                        .into_val(&env),
+                    std::vec![invocation(
+                        &env,
+                        &token_id,
+                        "transfer",
+                        (&sender, &flow_id, 100 * decimals as i128).into_val(&env),
+                        std::vec![],
+                    )],
+                )],
+            ),
+        )]
+    );
+
     assert_eq!(token_nft_id, 1);
+    assert!(has_dual_id_event(
+        &env,
+        &router_id,
+        "stream_created",
+        token_nft_id,
+        1,
+    ));
 
     // Verify NFT ownership
     let local_nft_client = nft_client::Client::new(&env, &nft_id);
@@ -161,6 +259,13 @@ fn test_end_to_end_flow_stream() {
         &recipient,
         &(10 * decimals as i128),
     );
+    assert!(has_dual_id_event(
+        &env,
+        &router_id,
+        "stream_withdrawn",
+        token_nft_id,
+        stream_id,
+    ));
 
     // Verify token balances
     assert_eq!(token_client.balance(&recipient), 10 * decimals as i128);
@@ -394,6 +499,256 @@ fn test_withdraw_after_nft_transfer() {
 }
 
 #[test]
+fn test_nft_owner_voids_flow_and_terminal_receipt_persists() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_admin_client = StellarAssetClient::new(&env, &token_id);
+
+    let admin = Address::generate(&env);
+    let (flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
+    let flow = flow_client::Client::new(&env, &flow_id);
+    let nft = nft_client::Client::new(&env, &nft_id);
+    let router = RouterContractClient::new(&env, &router_id);
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let terminal_owner = Address::generate(&env);
+    let decimals = 10u32.pow(7) as i128;
+    token_admin_client.mint(&sender, &(1_000 * decimals));
+
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_000,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let token_nft_id = router.create_flow_stream(
+        &sender,
+        &recipient,
+        &token_id,
+        &1_000_000_000_000_000_000,
+        &7,
+        &1_000,
+        &(100 * decimals),
+    );
+    let core_stream_id = router.core_stream_id(&token_nft_id);
+
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_010,
+        protocol_version: 25,
+        sequence_number: 110,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    router.void_flow(&token_nft_id, &recipient);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            recipient.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "void_flow",
+                (&token_nft_id, &recipient).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
+    assert!(has_dual_id_event(
+        &env,
+        &router_id,
+        "stream_voided",
+        token_nft_id,
+        core_stream_id,
+    ));
+    assert_eq!(
+        flow.status_of(&core_stream_id),
+        flow_client::StreamStatus::Voided
+    );
+    assert_eq!(
+        router.status_of(&token_nft_id),
+        CanonicalStreamStatus::Canceled
+    );
+
+    assert_eq!(
+        router.withdraw_max(&token_nft_id, &recipient, &recipient),
+        10 * decimals
+    );
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            recipient.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "withdraw_max",
+                (&token_nft_id, &recipient, &recipient).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
+    assert_eq!(flow.refund_max(&core_stream_id, &sender), 90 * decimals);
+    assert_eq!(
+        router.status_of(&token_nft_id),
+        CanonicalStreamStatus::Completed
+    );
+
+    // Completion preserves a transferable receipt and its immutable mapping.
+    assert!(nft.is_transferable(&token_nft_id));
+    nft.transfer(&recipient, &terminal_owner, &token_nft_id);
+    assert_eq!(router.owner_of(&token_nft_id), terminal_owner);
+    assert_eq!(router.core_stream_id(&token_nft_id), core_stream_id);
+    assert_eq!(
+        router.status_of(&token_nft_id),
+        CanonicalStreamStatus::Completed
+    );
+}
+
+#[test]
+fn test_lockup_transfer_partial_withdraw_cancel_and_terminal_withdraw() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token = TokenClient::new(&env, &token_id);
+    let token_admin_client = StellarAssetClient::new(&env, &token_id);
+
+    let admin = Address::generate(&env);
+    let (_flow_id, lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
+    let lockup = lockup_client::Client::new(&env, &lockup_id);
+    let nft = nft_client::Client::new(&env, &nft_id);
+    let router = RouterContractClient::new(&env, &router_id);
+
+    let sender = Address::generate(&env);
+    let initial_owner = Address::generate(&env);
+    let partial_owner = Address::generate(&env);
+    let terminal_owner = Address::generate(&env);
+    let decimals = 10u32.pow(7) as i128;
+    token_admin_client.mint(&sender, &(100 * decimals));
+
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_000,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let token_nft_id = router.create_lockup_stream(&CreateLockupParams {
+        sender: sender.clone(),
+        recipient: initial_owner.clone(),
+        token: token_id.clone(),
+        total_amount: 100 * decimals,
+        start_time: 1_000,
+        end_time: 1_100,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    });
+    let core_stream_id = router.core_stream_id(&token_nft_id);
+    assert_eq!(token.balance(&lockup_id), 100 * decimals);
+
+    // Transfer before a partial withdrawal moves only beneficiary rights.
+    nft.transfer(&initial_owner, &partial_owner, &token_nft_id);
+    env.ledger().set_timestamp(1_030);
+    router.withdraw(
+        &token_nft_id,
+        &partial_owner,
+        &partial_owner,
+        &(10 * decimals),
+    );
+
+    // The original sender still cancels and receives only the unvested amount.
+    env.ledger().set_timestamp(1_040);
+    assert_eq!(lockup.cancel(&core_stream_id, &sender), 60 * decimals);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            sender.clone(),
+            invocation(
+                &env,
+                &lockup_id,
+                "cancel",
+                (&core_stream_id, &sender).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
+    assert_eq!(token.balance(&sender), 60 * decimals);
+    assert_eq!(
+        router.status_of(&token_nft_id),
+        CanonicalStreamStatus::Canceled
+    );
+
+    // A post-cancellation transfer moves the remaining vested withdrawal right.
+    nft.transfer(&partial_owner, &terminal_owner, &token_nft_id);
+    assert_eq!(
+        router.withdraw_max(&token_nft_id, &terminal_owner, &terminal_owner),
+        30 * decimals
+    );
+    assert_eq!(token.balance(&terminal_owner), 30 * decimals);
+    assert_eq!(
+        router.status_of(&token_nft_id),
+        CanonicalStreamStatus::Completed
+    );
+    assert_eq!(router.owner_of(&token_nft_id), terminal_owner);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #303)")]
+fn test_non_owner_cannot_void_flow() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_admin_client = StellarAssetClient::new(&env, &token_id);
+    let admin = Address::generate(&env);
+    let (_flow_id, _lockup_id, _nft_id, router_id) = register_protocol(&env, &admin);
+    let router = RouterContractClient::new(&env, &router_id);
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    token_admin_client.mint(&sender, &100);
+
+    let token_nft_id = router.create_flow_stream(
+        &sender,
+        &recipient,
+        &token_id,
+        &1,
+        &7,
+        &env.ledger().timestamp(),
+        &100,
+    );
+    router.void_flow(&token_nft_id, &attacker);
+}
+
+#[test]
 fn test_upgrade() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
@@ -409,7 +764,7 @@ fn test_upgrade() {
 
     // Check that admin authorization was requested
     let auths = env.auths();
-    assert!(auths.len() > 0);
+    assert!(!auths.is_empty());
     assert_eq!(auths[0].0, admin);
 }
 
@@ -429,6 +784,6 @@ fn test_upgrade_nft() {
 
     // Check that admin authorization was requested
     let auths = env.auths();
-    assert!(auths.len() > 0);
+    assert!(!auths.is_empty());
     assert_eq!(auths[0].0, admin);
 }

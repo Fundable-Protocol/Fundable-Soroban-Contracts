@@ -164,14 +164,7 @@ impl StreamNftContract {
             PERSISTENT_TTL_LEDGERS,
         );
 
-        emit_nft_transfer(
-            &env,
-            &from,
-            &to,
-            token_id,
-            &stream_type,
-            core_stream_id,
-        );
+        emit_nft_transfer(&env, &from, &to, token_id, &stream_type, core_stream_id);
     }
 
     /// Get the owner of an NFT.

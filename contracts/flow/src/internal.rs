@@ -194,7 +194,7 @@ pub fn deposit(env: &Env, stream_id: u64, funder: &Address, amount: i128) {
 
     // Transfer tokens from funder to this contract
     let token_client = token::Client::new(env, &stream.token);
-    token_client.transfer(funder, &env.current_contract_address(), &amount);
+    token_client.transfer(funder, env.current_contract_address(), &amount);
 
     // Update stream balance
     stream.balance = stream

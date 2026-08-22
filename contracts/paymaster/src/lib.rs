@@ -26,6 +26,7 @@
 //! - `validate_fee_bounds` / `validate_expiration_ledger` — input validation
 
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::contracterror;
 

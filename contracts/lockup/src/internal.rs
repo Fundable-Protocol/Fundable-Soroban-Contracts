@@ -220,7 +220,7 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     let token_client = token::Client::new(env, &params.token);
     token_client.transfer(
         &params.sender,
-        &env.current_contract_address(),
+        env.current_contract_address(),
         &params.total_amount,
     );
 

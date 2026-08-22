@@ -122,7 +122,7 @@ fn test_create_stream() {
     assert_eq!(stream.token, token);
     assert_eq!(stream.rate_per_second, RATE_1_PER_SEC);
     assert_eq!(stream.balance, 0);
-    assert_eq!(stream.is_voided, false);
+    assert!(!stream.is_voided);
 }
 
 #[test]

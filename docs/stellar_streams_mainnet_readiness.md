@@ -103,50 +103,53 @@ Status: Complete. The CTO approved the specification organization-wide on
 Phase 2 depends on Phase 1. Backend intent validation, event indexing, and final
 frontend transaction code must not be frozen before these interfaces are frozen.
 
+Status: In progress. Current implementation evidence is recorded in
+[Phase 2 Contract Interface Evidence](phase_2_contract_interface_evidence.md).
+
 ### Router and Stream NFT
 
-- [ ] **CONTRACT-01:** Preserve the Router-as-underlying-recipient model.
-- [ ] **CONTRACT-02:** Ensure Router withdrawal authorization uses current NFT ownership.
-- [ ] **CONTRACT-03:** Add on-chain per-stream transferability enforcement, or remove transferability metadata/UI.
-- [ ] **CONTRACT-04:** Add stable queries for NFT owner, stream kind, core stream ID, and lifecycle status.
-- [ ] **CONTRACT-05:** Decide and implement NFT-owner Flow voiding through Router if supported.
-- [ ] **CONTRACT-06:** Emit events containing both NFT token ID and core stream ID.
-- [ ] **CONTRACT-07:** Emit sufficient creation, withdrawal, mutation, transfer,
+- [x] **CONTRACT-01:** Preserve the Router-as-underlying-recipient model.
+- [x] **CONTRACT-02:** Ensure Router withdrawal authorization uses current NFT ownership.
+- [x] **CONTRACT-03:** Add on-chain per-stream transferability enforcement, or remove transferability metadata/UI.
+- [x] **CONTRACT-04:** Add stable queries for NFT owner, stream kind, core stream ID, and lifecycle status.
+- [x] **CONTRACT-05:** Decide and implement NFT-owner Flow voiding through Router if supported.
+- [x] **CONTRACT-06:** Emit events containing both NFT token ID and core stream ID.
+- [x] **CONTRACT-07:** Emit sufficient creation, withdrawal, mutation, transfer,
   and terminal-state data for deterministic indexing.
-- [ ] **CONTRACT-08:** Use constructor-based initialization for all mainnet deployments.
+- [x] **CONTRACT-08:** Use constructor-based initialization for all mainnet deployments.
 - [ ] **CONTRACT-09:** Protect upgrade authority with multisig control.
 - [ ] **CONTRACT-10:** Decide whether non-emergency upgrades require a timelock.
 
 ### Lockup
 
-- [ ] **LOCKUP-01:** Verify fully funded atomic creation.
-- [ ] **LOCKUP-02:** Verify partial and maximum vested withdrawals.
-- [ ] **LOCKUP-03:** Verify cancellation freezes vesting at the cancellation point.
-- [ ] **LOCKUP-04:** Verify unvested funds return to the sender.
-- [ ] **LOCKUP-05:** Verify vested funds remain withdrawable by the current NFT owner after cancellation.
-- [ ] **LOCKUP-06:** Verify renounce permanently disables cancellation.
-- [ ] **LOCKUP-07:** Verify NFT transfer before and after partial withdrawal.
-- [ ] **LOCKUP-08:** Verify NFT transfer before and after cancellation.
+- [x] **LOCKUP-01:** Verify fully funded atomic creation.
+- [x] **LOCKUP-02:** Verify partial and maximum vested withdrawals.
+- [x] **LOCKUP-03:** Verify cancellation freezes vesting at the cancellation point.
+- [x] **LOCKUP-04:** Verify unvested funds return to the sender.
+- [x] **LOCKUP-05:** Verify vested funds remain withdrawable by the current NFT owner after cancellation.
+- [x] **LOCKUP-06:** Verify renounce permanently disables cancellation.
+- [x] **LOCKUP-07:** Verify NFT transfer before and after partial withdrawal.
+- [x] **LOCKUP-08:** Verify NFT transfer before and after cancellation.
 
 ### Flow
 
 - [ ] **FLOW-01:** Replace local-only Flow creation with an on-chain transaction.
-- [ ] **FLOW-02:** Add an initial funding amount.
-- [ ] **FLOW-03:** Prefer atomic Router creation and initial deposit.
-- [ ] **FLOW-04:** Implement deposit/top-up.
-- [ ] **FLOW-05:** Implement pause.
-- [ ] **FLOW-06:** Implement restart.
-- [ ] **FLOW-07:** Implement rate adjustment.
-- [ ] **FLOW-08:** Implement partial and maximum refund.
-- [ ] **FLOW-09:** Implement sender and, if intended, NFT-owner voiding.
-- [ ] **FLOW-10:** Define and expose balance, covered debt, uncovered debt,
+- [x] **FLOW-02:** Add an initial funding amount.
+- [x] **FLOW-03:** Prefer atomic Router creation and initial deposit.
+- [x] **FLOW-04:** Implement deposit/top-up.
+- [x] **FLOW-05:** Implement pause.
+- [x] **FLOW-06:** Implement restart.
+- [x] **FLOW-07:** Implement rate adjustment.
+- [x] **FLOW-08:** Implement partial and maximum refund.
+- [x] **FLOW-09:** Implement sender and, if intended, NFT-owner voiding.
+- [x] **FLOW-10:** Define and expose balance, covered debt, uncovered debt,
   refundable amount, and depletion time.
 - [ ] **FLOW-11:** Keep the mainnet Flow feature flag disabled until Phase 12 passes.
 
 ### Contract Verification
 
 - [ ] **VERIFY-01:** Isolate and commit the current audit fixes.
-- [ ] **VERIFY-02:** Run all unit tests.
+- [x] **VERIFY-02:** Run all unit tests.
 - [ ] **VERIFY-03:** Verify exact Soroban authorization trees for sensitive calls.
 - [ ] **VERIFY-04:** Add accounting invariant/property tests.
 - [ ] **VERIFY-05:** Add fuzz tests for amounts, timestamps, granularity, and state transitions.

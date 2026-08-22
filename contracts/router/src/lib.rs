@@ -1,11 +1,10 @@
 #![no_std]
+#![allow(clippy::too_many_arguments)]
 
 use shared::errors::RouterError;
 use shared::events;
 use shared::storage::{DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD};
-use shared::types::{
-    CanonicalStreamStatus, CreateLockupParams, StreamMetadata, StreamType,
-};
+use shared::types::{CanonicalStreamStatus, CreateLockupParams, StreamMetadata, StreamType};
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
 
 mod flow_client {
@@ -37,11 +36,7 @@ fn shared_stream_type(stream_type: &nft_client::StreamType) -> StreamType {
     }
 }
 
-fn require_nft_owner(
-    env: &Env,
-    token_id: i128,
-    caller: &Address,
-) -> (nft_client::StreamType, u64) {
+fn require_nft_owner(env: &Env, token_id: i128, caller: &Address) -> (nft_client::StreamType, u64) {
     let nft_addr = configured_address(env, &DataKey::NftContract);
     let nft = nft_client::Client::new(env, &nft_addr);
     if nft.owner_of(&token_id) != *caller {
@@ -62,9 +57,7 @@ fn canonical_status(
             match flow.status_of(&core_stream_id) {
                 flow_client::StreamStatus::Pending => CanonicalStreamStatus::Pending,
                 flow_client::StreamStatus::StreamingSolvent
-                | flow_client::StreamStatus::StreamingInsolvent => {
-                    CanonicalStreamStatus::Active
-                }
+                | flow_client::StreamStatus::StreamingInsolvent => CanonicalStreamStatus::Active,
                 flow_client::StreamStatus::PausedSolvent
                 | flow_client::StreamStatus::PausedInsolvent => CanonicalStreamStatus::Paused,
                 flow_client::StreamStatus::Voided => {
@@ -83,8 +76,9 @@ fn canonical_status(
             let lockup = lockup_client::Client::new(env, &lockup_addr);
             match lockup.status_of(&core_stream_id) {
                 lockup_client::LockupStatus::Pending => CanonicalStreamStatus::Pending,
-                lockup_client::LockupStatus::Streaming
-                | lockup_client::LockupStatus::Settled => CanonicalStreamStatus::Active,
+                lockup_client::LockupStatus::Streaming | lockup_client::LockupStatus::Settled => {
+                    CanonicalStreamStatus::Active
+                }
                 lockup_client::LockupStatus::Canceled => CanonicalStreamStatus::Canceled,
                 lockup_client::LockupStatus::Depleted => CanonicalStreamStatus::Completed,
             }
@@ -402,8 +396,7 @@ impl RouterContract {
     /// Return the core engine kind for a public stream ID.
     pub fn stream_type(env: Env, token_id: i128) -> StreamType {
         let nft_addr = configured_address(&env, &DataKey::NftContract);
-        let (stream_type, _) =
-            nft_client::Client::new(&env, &nft_addr).get_stream_data(&token_id);
+        let (stream_type, _) = nft_client::Client::new(&env, &nft_addr).get_stream_data(&token_id);
         shared_stream_type(&stream_type)
     }
 

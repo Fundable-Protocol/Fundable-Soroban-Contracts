@@ -7,8 +7,6 @@
 //! - Negative tests: unauthorized token, zero fee, insufficient balance
 //! - Admin-only access control
 
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},

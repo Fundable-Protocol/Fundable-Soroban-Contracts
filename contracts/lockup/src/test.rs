@@ -120,7 +120,7 @@ fn test_create_stream() {
     assert_eq!(stream.recipient, recipient);
     assert_eq!(stream.total_amount, total);
     assert_eq!(stream.withdrawn_amount, 0);
-    assert_eq!(stream.cancelable, true);
+    assert!(stream.cancelable);
 
     // Contract should hold the tokens
     assert_eq!(token_client.balance(&contract_id), total);
@@ -740,11 +740,11 @@ fn test_renounce() {
     };
     let stream_id = client.create(&params);
 
-    assert_eq!(client.is_cancelable(&stream_id), true);
+    assert!(client.is_cancelable(&stream_id));
 
     client.renounce(&stream_id, &sender);
 
-    assert_eq!(client.is_cancelable(&stream_id), false);
+    assert!(!client.is_cancelable(&stream_id));
 }
 
 #[test]
@@ -798,8 +798,8 @@ fn test_status_lifecycle() {
 
     // Before start: Pending (warm)
     assert_eq!(client.status_of(&stream_id), LockupStatus::Pending);
-    assert_eq!(client.is_warm(&stream_id), true);
-    assert_eq!(client.is_cold(&stream_id), false);
+    assert!(client.is_warm(&stream_id));
+    assert!(!client.is_cold(&stream_id));
 
     // During vesting: Streaming (warm)
     env.ledger().set(LedgerInfo {
@@ -813,7 +813,7 @@ fn test_status_lifecycle() {
         max_entry_ttl: 10_000_000,
     });
     assert_eq!(client.status_of(&stream_id), LockupStatus::Streaming);
-    assert_eq!(client.is_warm(&stream_id), true);
+    assert!(client.is_warm(&stream_id));
 
     // After end: Settled (cold)
     env.ledger().set(LedgerInfo {
@@ -827,12 +827,12 @@ fn test_status_lifecycle() {
         max_entry_ttl: 10_000_000,
     });
     assert_eq!(client.status_of(&stream_id), LockupStatus::Settled);
-    assert_eq!(client.is_cold(&stream_id), true);
+    assert!(client.is_cold(&stream_id));
 
     // Withdraw all: Depleted (cold)
     client.withdraw_max(&stream_id, &recipient, &recipient);
     assert_eq!(client.status_of(&stream_id), LockupStatus::Depleted);
-    assert_eq!(client.is_cold(&stream_id), true);
+    assert!(client.is_cold(&stream_id));
 }
 
 // ---------------------------------------------------------------------------
