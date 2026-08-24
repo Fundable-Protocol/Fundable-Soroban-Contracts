@@ -190,6 +190,7 @@ pub fn emit_nft_transfer(
     token_id: i128,
     stream_type: &StreamType,
     core_stream_id: u64,
+    transferable: bool,
 ) {
     let topics = (Symbol::new(env, "transfer"), token_id);
     let data = (
@@ -197,6 +198,7 @@ pub fn emit_nft_transfer(
         to.clone(),
         stream_type.clone(),
         core_stream_id,
+        transferable,
     );
     env.events().publish(topics, data);
 }
@@ -206,6 +208,7 @@ pub fn emit_nft_transfer(
 // ---------------------------------------------------------------------------
 
 /// Emit the canonical mapping created between a public NFT ID and core ID.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_stream_created(
     env: &Env,
     token_id: i128,
@@ -214,6 +217,7 @@ pub fn emit_stream_created(
     sender: &Address,
     owner: &Address,
     token: &Address,
+    transferable: bool,
 ) {
     let topics = (Symbol::new(env, "stream_created"), token_id, core_stream_id);
     let data = (
@@ -221,6 +225,7 @@ pub fn emit_stream_created(
         sender.clone(),
         owner.clone(),
         token.clone(),
+        transferable,
     );
     env.events().publish(topics, data);
 }

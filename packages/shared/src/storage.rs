@@ -34,6 +34,8 @@ pub enum DataKey {
     TokenOwner(i128),
     /// NFT stream data mapping token ID to stream type and ID (Persistent storage).
     TokenStreamData(i128),
+    /// Immutable per-stream NFT transferability policy (Persistent storage).
+    TokenTransferable(i128),
     /// Number of NFTs owned by an address (Persistent storage).
     NftBalance(Address),
     /// Token metadata, e.g., name, symbol, URI (Instance storage).

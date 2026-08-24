@@ -110,6 +110,28 @@ fn test_configure_twice_fails() {
 }
 
 #[test]
+fn test_set_admin_rotates_router_authority() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let router_id = env.register(RouterContract, RouterContractArgs::__constructor(&admin));
+    let client = RouterContractClient::new(&env, &router_id);
+
+    client.set_admin(&new_admin);
+    assert_eq!(env.auths()[0].0, admin);
+
+    client.configure(
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &Address::generate(&env),
+    );
+    assert_eq!(env.auths()[0].0, new_admin);
+}
+
+#[test]
 fn test_end_to_end_flow_stream() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
@@ -160,6 +182,7 @@ fn test_end_to_end_flow_stream() {
         &7, // decimals
         &start_time,
         &(100 * decimals as i128),
+        &true,
     );
 
     assert_eq!(
@@ -178,6 +201,7 @@ fn test_end_to_end_flow_stream() {
                     7_u32,
                     start_time,
                     100 * decimals as i128,
+                    true,
                 )
                     .into_val(&env),
                 std::vec![invocation(
@@ -326,7 +350,7 @@ fn test_end_to_end_lockup_stream() {
         cancelable: false,
     };
 
-    let token_nft_id = router_client.create_lockup_stream(&params);
+    let token_nft_id = router_client.create_lockup_stream(&params, &true);
     assert_eq!(token_nft_id, 1);
 
     let local_nft_client = nft_client::Client::new(&env, &nft_id);
@@ -401,6 +425,7 @@ fn test_withdraw_fails_if_not_nft_owner() {
         &7,
         &env.ledger().timestamp(),
         &(100 * decimals as i128),
+        &true,
     );
 
     // Fast forward
@@ -468,6 +493,7 @@ fn test_withdraw_after_nft_transfer() {
         &7,
         &env.ledger().timestamp(),
         &(100 * decimals as i128),
+        &true,
     );
 
     // Transfer NFT to new owner
@@ -496,6 +522,58 @@ fn test_withdraw_after_nft_transfer() {
 
     // Verify new owner got the tokens
     assert_eq!(token_client.balance(&new_owner), 10 * decimals as i128);
+}
+
+#[test]
+fn test_non_transferable_stream_metadata_and_transfer_enforcement() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_id = sac.address();
+    let token_admin_client = StellarAssetClient::new(&env, &token_id);
+
+    let admin = Address::generate(&env);
+    let (_flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
+    let nft = nft_client::Client::new(&env, &nft_id);
+    let router = RouterContractClient::new(&env, &router_id);
+
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let attempted_owner = Address::generate(&env);
+    let decimals = 10u32.pow(7) as i128;
+    token_admin_client.mint(&sender, &(100 * decimals));
+
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_000,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let stream_id = router.create_flow_stream(
+        &sender,
+        &recipient,
+        &token_id,
+        &1_000_000_000_000_000_000,
+        &7,
+        &1_000,
+        &(100 * decimals),
+        &false,
+    );
+
+    assert!(!router.get_stream(&stream_id).transferable);
+    assert!(!nft.is_transferable(&stream_id));
+    assert!(nft
+        .try_transfer(&recipient, &attempted_owner, &stream_id)
+        .is_err());
+    assert_eq!(nft.owner_of(&stream_id), recipient);
 }
 
 #[test]
@@ -540,6 +618,7 @@ fn test_nft_owner_voids_flow_and_terminal_receipt_persists() {
         &7,
         &1_000,
         &(100 * decimals),
+        &true,
     );
     let core_stream_id = router.core_stream_id(&token_nft_id);
 
@@ -654,19 +733,22 @@ fn test_lockup_transfer_partial_withdraw_cancel_and_terminal_withdraw() {
         max_entry_ttl: 10_000_000,
     });
 
-    let token_nft_id = router.create_lockup_stream(&CreateLockupParams {
-        sender: sender.clone(),
-        recipient: initial_owner.clone(),
-        token: token_id.clone(),
-        total_amount: 100 * decimals,
-        start_time: 1_000,
-        end_time: 1_100,
-        cliff_time: 0,
-        start_unlock_amount: 0,
-        cliff_unlock_amount: 0,
-        granularity: 1,
-        cancelable: true,
-    });
+    let token_nft_id = router.create_lockup_stream(
+        &CreateLockupParams {
+            sender: sender.clone(),
+            recipient: initial_owner.clone(),
+            token: token_id.clone(),
+            total_amount: 100 * decimals,
+            start_time: 1_000,
+            end_time: 1_100,
+            cliff_time: 0,
+            start_unlock_amount: 0,
+            cliff_unlock_amount: 0,
+            granularity: 1,
+            cancelable: true,
+        },
+        &true,
+    );
     let core_stream_id = router.core_stream_id(&token_nft_id);
     assert_eq!(token.balance(&lockup_id), 100 * decimals);
 
@@ -744,6 +826,7 @@ fn test_non_owner_cannot_void_flow() {
         &7,
         &env.ledger().timestamp(),
         &100,
+        &true,
     );
     router.void_flow(&token_nft_id, &attacker);
 }

@@ -3,12 +3,14 @@ default: build
 all: test
 
 # Build contracts in dependency order. Router imports the generated Flow,
-# Lockup, and Stream NFT WASM specifications at compile time.
+# Lockup, and Stream NFT WASM specifications at compile time. Governance has
+# no runtime dependency on the governed contract WASMs.
 build:
 	stellar contract build --package flow
 	stellar contract build --package lockup
 	stellar contract build --package stream-nft
 	stellar contract build --package paymaster
+	stellar contract build --package governance
 	stellar contract build --package router
 	@echo ""
 	@echo "Built WASM artifacts:"

@@ -71,7 +71,7 @@ pub struct StreamMetadata {
     pub core_stream_id: u64,
     /// Canonical cross-engine lifecycle state.
     pub status: CanonicalStreamStatus,
-    /// V1 streams are universally transferable.
+    /// Immutable transferability policy selected when the stream is created.
     pub transferable: bool,
 }
 

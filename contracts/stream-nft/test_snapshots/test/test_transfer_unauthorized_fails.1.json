@@ -26,6 +26,9 @@
                 },
                 {
                   "i128": "1"
+                },
+                {
+                  "bool": true
                 }
               ]
             }
@@ -147,6 +150,33 @@
                     "u64": "42"
                   }
                 ]
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 2073600
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "TokenTransferable"
+                  },
+                  {
+                    "i128": "1"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "bool": true
               }
             }
           },

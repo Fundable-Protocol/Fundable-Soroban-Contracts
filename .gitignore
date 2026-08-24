@@ -27,3 +27,6 @@ Thumbs.db
 
 /docs/*
 !/docs/stellar_streams_mainnet_readiness.md
+!/docs/stellar_streams_lifecycle_and_authorization.md
+!/docs/phase_2_contract_interface_evidence.md
+!/docs/upgrade_governance.md

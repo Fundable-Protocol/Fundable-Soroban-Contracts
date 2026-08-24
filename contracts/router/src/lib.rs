@@ -141,6 +141,17 @@ impl RouterContract {
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
     }
 
+    /// Transfer Router administration to a new governance address.
+    pub fn set_admin(env: Env, new_admin: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        events::emit_admin_transferred(&env, &admin, &new_admin);
+    }
+
     /// Admin can upgrade the NFT contract logic.
     pub fn upgrade_nft(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
@@ -162,6 +173,7 @@ impl RouterContract {
         token_decimals: u32,
         start_time: u64,
         initial_amount: i128,
+        transferable: bool,
     ) -> i128 {
         sender.require_auth();
         env.storage()
@@ -206,6 +218,7 @@ impl RouterContract {
             &nft_client::StreamType::Flow,
             &stream_id,
             &token_id,
+            &transferable,
         );
 
         events::emit_stream_created(
@@ -216,13 +229,14 @@ impl RouterContract {
             &sender,
             &recipient,
             &token,
+            transferable,
         );
 
         token_id
     }
 
     /// Create a Lockup stream and mint an NFT.
-    pub fn create_lockup_stream(env: Env, params: CreateLockupParams) -> i128 {
+    pub fn create_lockup_stream(env: Env, params: CreateLockupParams, transferable: bool) -> i128 {
         params.sender.require_auth();
         env.storage()
             .instance()
@@ -274,6 +288,7 @@ impl RouterContract {
             &nft_client::StreamType::Lockup,
             &stream_id,
             &token_id,
+            &transferable,
         );
 
         events::emit_stream_created(
@@ -284,6 +299,7 @@ impl RouterContract {
             &params.sender,
             &original_recipient,
             &params.token,
+            transferable,
         );
 
         token_id
@@ -428,7 +444,7 @@ impl RouterContract {
             stream_type: shared_stream_type(&stream_type),
             core_stream_id,
             status: canonical_status(&env, &stream_type, core_stream_id),
-            transferable: true,
+            transferable: nft.is_transferable(&token_id),
         }
     }
 }

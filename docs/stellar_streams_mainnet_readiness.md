@@ -117,8 +117,9 @@ Status: In progress. Current implementation evidence is recorded in
 - [x] **CONTRACT-07:** Emit sufficient creation, withdrawal, mutation, transfer,
   and terminal-state data for deterministic indexing.
 - [x] **CONTRACT-08:** Use constructor-based initialization for all mainnet deployments.
-- [ ] **CONTRACT-09:** Protect upgrade authority with multisig control.
-- [ ] **CONTRACT-10:** Decide whether non-emergency upgrades require a timelock.
+- [x] **CONTRACT-09:** Protect upgrade authority with multisig control.
+- [x] **CONTRACT-10:** Require a 48-hour timelock for non-emergency upgrades;
+  emergency upgrades require four-of-five approval and a reason hash.
 
 ### Lockup
 

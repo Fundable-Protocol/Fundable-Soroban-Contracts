@@ -42,7 +42,14 @@ impl StreamNftContract {
 
     /// Mint a new NFT representing a stream.
     /// Only the admin (Router) can mint.
-    pub fn mint(env: Env, to: Address, stream_type: StreamType, stream_id: u64, token_id: i128) {
+    pub fn mint(
+        env: Env,
+        to: Address,
+        stream_type: StreamType,
+        stream_id: u64,
+        token_id: i128,
+        transferable: bool,
+    ) {
         let admin: Address = env
             .storage()
             .instance()
@@ -75,6 +82,17 @@ impl StreamNftContract {
             PERSISTENT_TTL_LEDGERS,
         );
 
+        // Transferability is immutable for the lifetime of the receipt.
+        let transferable_key = DataKey::TokenTransferable(token_id);
+        env.storage()
+            .persistent()
+            .set(&transferable_key, &transferable);
+        env.storage().persistent().extend_ttl(
+            &transferable_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_LEDGERS,
+        );
+
         // Update balance
         let balance_key = DataKey::NftBalance(to.clone());
         let current_balance: i128 = env.storage().persistent().get(&balance_key).unwrap_or(0);
@@ -95,7 +113,15 @@ impl StreamNftContract {
         // Since we can't easily construct a zero address in Soroban without a byte array,
         // we'll just emit transfer from the admin/contract itself or skip the 'from' and emit special mint.
         // For simplicity, we just emit nft_transfer where from == admin.
-        emit_nft_transfer(&env, &admin, &to, token_id, &stream_type, stream_id);
+        emit_nft_transfer(
+            &env,
+            &admin,
+            &to,
+            token_id,
+            &stream_type,
+            stream_id,
+            transferable,
+        );
     }
 
     /// Transfer an NFT to a new owner.
@@ -111,6 +137,25 @@ impl StreamNftContract {
 
         if owner != from {
             panic_with_error!(&env, NftError::NotAuthorized);
+        }
+
+        let transferable_key = DataKey::TokenTransferable(token_id);
+        // Receipts minted before per-stream enforcement were universally
+        // transferable, so a missing legacy key preserves that behavior.
+        let transferable: bool = env
+            .storage()
+            .persistent()
+            .get(&transferable_key)
+            .unwrap_or(true);
+        if !transferable {
+            panic_with_error!(&env, NftError::NotTransferable);
+        }
+        if env.storage().persistent().has(&transferable_key) {
+            env.storage().persistent().extend_ttl(
+                &transferable_key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_LEDGERS,
+            );
         }
 
         let data_key = DataKey::TokenStreamData(token_id);
@@ -164,7 +209,15 @@ impl StreamNftContract {
             PERSISTENT_TTL_LEDGERS,
         );
 
-        emit_nft_transfer(&env, &from, &to, token_id, &stream_type, core_stream_id);
+        emit_nft_transfer(
+            &env,
+            &from,
+            &to,
+            token_id,
+            &stream_type,
+            core_stream_id,
+            transferable,
+        );
     }
 
     /// Get the owner of an NFT.
@@ -216,7 +269,7 @@ impl StreamNftContract {
         data
     }
 
-    /// V1 Stream NFTs are universally transferable.
+    /// Return the immutable per-stream transferability policy.
     pub fn is_transferable(env: Env, token_id: i128) -> bool {
         // Require an existing receipt so callers cannot treat arbitrary IDs as streams.
         let owner_key = DataKey::TokenOwner(token_id);
@@ -228,7 +281,20 @@ impl StreamNftContract {
             PERSISTENT_TTL_THRESHOLD,
             PERSISTENT_TTL_LEDGERS,
         );
-        true
+        let transferable_key = DataKey::TokenTransferable(token_id);
+        let transferable = env
+            .storage()
+            .persistent()
+            .get(&transferable_key)
+            .unwrap_or(true);
+        if env.storage().persistent().has(&transferable_key) {
+            env.storage().persistent().extend_ttl(
+                &transferable_key,
+                PERSISTENT_TTL_THRESHOLD,
+                PERSISTENT_TTL_LEDGERS,
+            );
+        }
+        transferable
     }
 
     /// Get token name
