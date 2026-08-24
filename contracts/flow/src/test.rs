@@ -10,12 +10,21 @@
 
 #![cfg(test)]
 
+extern crate std;
+
 use super::*;
+use proptest::prelude::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
+    testutils::{
+        Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Ledger, LedgerInfo,
+    },
     token::{StellarAssetClient, TokenClient},
-    Address, Env,
+    Address, Env, IntoVal, Symbol, Val, Vec,
 };
+
+mod current_flow_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/flow.wasm");
+}
 
 // ---------------------------------------------------------------------------
 // Test Helpers
@@ -40,7 +49,22 @@ fn setup_test() -> (
     Address,
     TokenClient<'static>,
 ) {
-    let env = Env::default();
+    setup_test_with_snapshots(true)
+}
+
+fn setup_test_with_snapshots(
+    capture_snapshot_at_drop: bool,
+) -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    Address,
+    TokenClient<'static>,
+) {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop,
+    });
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
@@ -79,6 +103,344 @@ fn setup_test() -> (
 /// Create a helper to get a client from env + contract_id
 fn get_client<'a>(env: &Env, contract_id: &Address) -> FlowContractClient<'a> {
     FlowContractClient::new(env, contract_id)
+}
+
+fn invocation(
+    env: &Env,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+    sub_invocations: std::vec::Vec<AuthorizedInvocation>,
+) -> AuthorizedInvocation {
+    AuthorizedInvocation {
+        function: AuthorizedFunction::Contract((
+            contract.clone(),
+            Symbol::new(env, function),
+            args,
+        )),
+        sub_invocations,
+    }
+}
+
+fn assert_exact_auth(
+    env: &Env,
+    signer: &Address,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+    sub_invocations: std::vec::Vec<AuthorizedInvocation>,
+) {
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            signer.clone(),
+            invocation(env, contract, function, args, sub_invocations),
+        )]
+    );
+}
+
+#[test]
+fn test_exact_authorization_trees_for_sensitive_flow_calls() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let amount = 100 * ONE_TOKEN;
+
+    let stream_id = client.create_and_deposit(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &1_000,
+        &amount,
+    );
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "create_and_deposit",
+        (
+            sender.clone(),
+            recipient.clone(),
+            token.clone(),
+            RATE_1_PER_SEC,
+            TOKEN_DECIMALS,
+            1_000_u64,
+            amount,
+        )
+            .into_val(&env),
+        std::vec![invocation(
+            &env,
+            &token,
+            "transfer",
+            (sender.clone(), contract_id.clone(), amount).into_val(&env),
+            std::vec![],
+        )],
+    );
+
+    let top_up = 10 * ONE_TOKEN;
+    client.deposit(&stream_id, &sender, &top_up);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "deposit",
+        (stream_id, sender.clone(), top_up).into_val(&env),
+        std::vec![invocation(
+            &env,
+            &token,
+            "transfer",
+            (sender.clone(), contract_id.clone(), top_up).into_val(&env),
+            std::vec![],
+        )],
+    );
+
+    client.pause(&stream_id, &sender);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "pause",
+        (stream_id, sender.clone()).into_val(&env),
+        std::vec![],
+    );
+    client.restart(&stream_id, &sender, &(RATE_1_PER_SEC * 2));
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "restart",
+        (stream_id, sender.clone(), RATE_1_PER_SEC * 2).into_val(&env),
+        std::vec![],
+    );
+    client.adjust_rate(&stream_id, &sender, &(RATE_1_PER_SEC * 3));
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "adjust_rate",
+        (stream_id, sender.clone(), RATE_1_PER_SEC * 3).into_val(&env),
+        std::vec![],
+    );
+
+    env.ledger().set_timestamp(1_010);
+    client.withdraw(&stream_id, &recipient, &recipient, &ONE_TOKEN);
+    assert_exact_auth(
+        &env,
+        &recipient,
+        &contract_id,
+        "withdraw",
+        (stream_id, recipient.clone(), recipient.clone(), ONE_TOKEN).into_val(&env),
+        std::vec![],
+    );
+    client.withdraw_max(&stream_id, &recipient, &recipient);
+    assert_exact_auth(
+        &env,
+        &recipient,
+        &contract_id,
+        "withdraw_max",
+        (stream_id, recipient.clone(), recipient.clone()).into_val(&env),
+        std::vec![],
+    );
+
+    client.refund(&stream_id, &sender, &ONE_TOKEN);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "refund",
+        (stream_id, sender.clone(), ONE_TOKEN).into_val(&env),
+        std::vec![],
+    );
+    client.refund_max(&stream_id, &sender);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "refund_max",
+        (stream_id, sender.clone()).into_val(&env),
+        std::vec![],
+    );
+    client.void_stream(&stream_id, &sender);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "void_stream",
+        (stream_id, sender.clone()).into_val(&env),
+        std::vec![],
+    );
+
+    let standalone_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &1_010,
+    );
+    assert_eq!(standalone_id, 2);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "create",
+        (
+            sender.clone(),
+            recipient,
+            token,
+            RATE_1_PER_SEC,
+            TOKEN_DECIMALS,
+            1_010_u64,
+        )
+            .into_val(&env),
+        std::vec![],
+    );
+}
+
+#[test]
+fn test_exact_authorization_tree_for_flow_admin_rotation() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let contract_id = env.register(FlowContract, FlowContractArgs::__constructor(&admin));
+    let client = FlowContractClient::new(&env, &contract_id);
+
+    let wasm_hash = env.deployer().upload_contract_wasm(current_flow_wasm::WASM);
+    client.upgrade(&wasm_hash);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "upgrade",
+        (wasm_hash,).into_val(&env),
+        std::vec![],
+    );
+
+    client.set_admin(&new_admin);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "set_admin",
+        (new_admin,).into_val(&env),
+        std::vec![],
+    );
+}
+
+fn assert_flow_accounting_invariants(
+    client: &FlowContractClient<'_>,
+    token_client: &TokenClient<'_>,
+    contract_id: &Address,
+    stream_id: u64,
+) {
+    let stream = client.get_stream(&stream_id);
+    let total_debt = client.total_debt_of(&stream_id);
+    let covered = client.covered_debt_of(&stream_id);
+    let uncovered = client.uncovered_debt_of(&stream_id);
+    let refundable = client.refundable_amount_of(&stream_id);
+
+    assert!(stream.balance >= 0);
+    assert!(total_debt >= 0);
+    assert!(covered >= 0 && covered <= stream.balance);
+    assert!(uncovered >= 0);
+    assert!(refundable >= 0);
+    assert_eq!(total_debt, covered + uncovered);
+    assert_eq!(stream.balance, covered + refundable);
+    assert_eq!(token_client.balance(contract_id), stream.balance);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn prop_flow_conserves_assets_and_partitions_debt(
+        deposit in 1_i128..=1_000_000_000_000_i128,
+        native_rate in 1_i128..=1_000_000_i128,
+        elapsed in 0_u64..=100_000_u64,
+        withdraw_percent in 0_i128..=100_i128,
+        refund_percent in 0_i128..=100_i128,
+    ) {
+        let (env, contract_id, sender, recipient, token, token_client) =
+            setup_test_with_snapshots(false);
+        let client = get_client(&env, &contract_id);
+        let initial_supply = token_client.balance(&sender);
+        let rate_scaled = native_rate * 100_000_000_000_i128;
+        let stream_id = client.create_and_deposit(
+            &sender,
+            &recipient,
+            &token,
+            &rate_scaled,
+            &TOKEN_DECIMALS,
+            &1_000,
+            &deposit,
+        );
+        env.ledger().set_timestamp(1_000 + elapsed);
+
+        assert_flow_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+
+        let covered = client.covered_debt_of(&stream_id);
+        let withdrawal = covered * withdraw_percent / 100;
+        if withdrawal > 0 {
+            client.withdraw(&stream_id, &recipient, &recipient, &withdrawal);
+        }
+        assert_flow_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+
+        let refundable = client.refundable_amount_of(&stream_id);
+        let refund = refundable * refund_percent / 100;
+        if refund > 0 {
+            client.refund(&stream_id, &sender, &refund);
+        }
+        assert_flow_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+
+        prop_assert_eq!(
+            token_client.balance(&sender)
+                + token_client.balance(&recipient)
+                + token_client.balance(&contract_id),
+            initial_supply
+        );
+    }
+
+    #[test]
+    fn prop_flow_pause_preserves_debt_and_restart_accrues_from_snapshot(
+        deposit in 1_000_000_i128..=1_000_000_000_000_i128,
+        first_rate in 1_i128..=10_000_i128,
+        second_rate in 1_i128..=10_000_i128,
+        first_elapsed in 0_u64..=10_000_u64,
+        paused_elapsed in 0_u64..=10_000_u64,
+        second_elapsed in 0_u64..=10_000_u64,
+    ) {
+        let (env, contract_id, sender, recipient, token, token_client) =
+            setup_test_with_snapshots(false);
+        let client = get_client(&env, &contract_id);
+        let first_rate_scaled = first_rate * 100_000_000_000_i128;
+        let second_rate_scaled = second_rate * 100_000_000_000_i128;
+        let stream_id = client.create_and_deposit(
+            &sender,
+            &recipient,
+            &token,
+            &first_rate_scaled,
+            &TOKEN_DECIMALS,
+            &1_000,
+            &deposit,
+        );
+
+        env.ledger().set_timestamp(1_000 + first_elapsed);
+        client.pause(&stream_id, &sender);
+        let debt_at_pause = client.total_debt_of(&stream_id);
+        env.ledger().set_timestamp(1_000 + first_elapsed + paused_elapsed);
+        prop_assert_eq!(client.total_debt_of(&stream_id), debt_at_pause);
+
+        client.restart(&stream_id, &sender, &second_rate_scaled);
+        env.ledger().set_timestamp(1_000 + first_elapsed + paused_elapsed + second_elapsed);
+        prop_assert_eq!(
+            client.total_debt_of(&stream_id),
+            debt_at_pause + second_rate * second_elapsed as i128
+        );
+        assert_flow_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+    }
 }
 
 // ---------------------------------------------------------------------------

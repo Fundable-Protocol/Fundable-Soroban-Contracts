@@ -85,10 +85,19 @@ fn test_constructor_and_configure() {
     let nft = Address::generate(&env);
 
     client.configure(&flow, &lockup, &nft);
-
-    let auths = env.auths();
-    assert_eq!(auths.len(), 1);
-    assert_eq!(auths[0].0, admin);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "configure",
+                (flow, lockup, nft).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
 }
 
 #[test]
@@ -121,14 +130,37 @@ fn test_set_admin_rotates_router_authority() {
     let client = RouterContractClient::new(&env, &router_id);
 
     client.set_admin(&new_admin);
-    assert_eq!(env.auths()[0].0, admin);
-
-    client.configure(
-        &Address::generate(&env),
-        &Address::generate(&env),
-        &Address::generate(&env),
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "set_admin",
+                (new_admin.clone(),).into_val(&env),
+                std::vec![],
+            ),
+        )]
     );
-    assert_eq!(env.auths()[0].0, new_admin);
+
+    let flow = Address::generate(&env);
+    let lockup = Address::generate(&env);
+    let nft = Address::generate(&env);
+    client.configure(&flow, &lockup, &nft);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            new_admin.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "configure",
+                (flow, lockup, nft).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
 }
 
 #[test]
@@ -310,7 +342,7 @@ fn test_end_to_end_lockup_stream() {
 
     // 2. Deploy and configure core contracts
     let admin = Address::generate(&env);
-    let (_flow_id, _lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
+    let (_flow_id, lockup_id, nft_id, router_id) = register_protocol(&env, &admin);
     let router_client = RouterContractClient::new(&env, &router_id);
 
     // 3. Setup users
@@ -352,6 +384,35 @@ fn test_end_to_end_lockup_stream() {
 
     let token_nft_id = router_client.create_lockup_stream(&params, &true);
     assert_eq!(token_nft_id, 1);
+    let core_params = shared::types::CreateLockupParams {
+        recipient: router_id.clone(),
+        ..params.clone()
+    };
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            sender.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "create_lockup_stream",
+                (params.clone(), true).into_val(&env),
+                std::vec![invocation(
+                    &env,
+                    &lockup_id,
+                    "create",
+                    (core_params,).into_val(&env),
+                    std::vec![invocation(
+                        &env,
+                        &token_id,
+                        "transfer",
+                        (sender.clone(), lockup_id.clone(), 100 * decimals as i128,).into_val(&env),
+                        std::vec![],
+                    )],
+                )],
+            ),
+        )]
+    );
 
     let local_nft_client = nft_client::Client::new(&env, &nft_id);
     let (stream_type, stream_id) = local_nft_client.get_stream_data(&token_nft_id);
@@ -376,6 +437,25 @@ fn test_end_to_end_lockup_stream() {
         &recipient,
         &recipient,
         &(50 * decimals as i128),
+    );
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            recipient.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "withdraw",
+                (
+                    token_nft_id,
+                    recipient.clone(),
+                    recipient.clone(),
+                    50 * decimals as i128,
+                )
+                    .into_val(&env),
+                std::vec![],
+            ),
+        )]
     );
     assert_eq!(token_client.balance(&recipient), 50 * decimals as i128);
 }
@@ -844,11 +924,19 @@ fn test_upgrade() {
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
     router_client.upgrade(&new_wasm_hash);
-
-    // Check that admin authorization was requested
-    let auths = env.auths();
-    assert!(!auths.is_empty());
-    assert_eq!(auths[0].0, admin);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "upgrade",
+                (new_wasm_hash,).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
 }
 
 #[test]
@@ -864,9 +952,17 @@ fn test_upgrade_nft() {
     // Use a valid WASM from our imports to test upgrading
     let new_wasm_hash = env.deployer().upload_contract_wasm(flow_client::WASM);
     router_client.upgrade_nft(&new_wasm_hash);
-
-    // Check that admin authorization was requested
-    let auths = env.auths();
-    assert!(!auths.is_empty());
-    assert_eq!(auths[0].0, admin);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            invocation(
+                &env,
+                &router_id,
+                "upgrade_nft",
+                (new_wasm_hash,).into_val(&env),
+                std::vec![],
+            ),
+        )]
+    );
 }

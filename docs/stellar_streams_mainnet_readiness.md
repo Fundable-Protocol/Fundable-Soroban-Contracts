@@ -149,10 +149,10 @@ Status: In progress. Current implementation evidence is recorded in
 
 ### Contract Verification
 
-- [ ] **VERIFY-01:** Isolate and commit the current audit fixes.
+- [x] **VERIFY-01:** Isolate and commit the current audit fixes (`a9deef4`).
 - [x] **VERIFY-02:** Run all unit tests.
-- [ ] **VERIFY-03:** Verify exact Soroban authorization trees for sensitive calls.
-- [ ] **VERIFY-04:** Add accounting invariant/property tests.
+- [x] **VERIFY-03:** Verify exact Soroban authorization trees for sensitive calls.
+- [x] **VERIFY-04:** Add accounting invariant/property tests.
 - [ ] **VERIFY-05:** Add fuzz tests for amounts, timestamps, granularity, and state transitions.
 - [ ] **VERIFY-06:** Test failed cross-contract calls and malicious/non-standard token behavior.
 - [ ] **VERIFY-07:** Profile CPU, memory, ledger reads/writes, footprint, and fees for worst-case calls.

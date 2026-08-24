@@ -1,7 +1,7 @@
 # Phase 2 Contract Interface Evidence
 
 Status: In progress  
-Last updated: 2026-08-23
+Last updated: 2026-08-24
 
 ## Scope of This Evidence
 
@@ -52,28 +52,74 @@ remain disabled until phase 12 passes.
 
 ## Authorization Evidence
 
-Tests assert exact Soroban authorization trees for representative high-risk
-cross-contract paths:
+Exact authorization-tree assertions now cover every production-sensitive
+entrypoint:
 
-- Router Flow creation -> Flow `create_and_deposit` -> token `transfer`;
-- Router NFT-owner `void_flow`;
-- Router NFT-owner `withdraw_max`;
-- original-sender Lockup `cancel`.
+| Surface | Exact-tree coverage |
+| --- | --- |
+| Flow | `upgrade`, `set_admin`, `create`, `create_and_deposit`, `deposit`, `withdraw`, `withdraw_max`, `pause`, `restart`, `adjust_rate`, `refund`, `refund_max`, and `void_stream` |
+| Lockup | `upgrade`, `set_admin`, `create`, `withdraw`, `withdraw_max`, `cancel`, and `renounce` |
+| Stream NFT | `upgrade`, `mint`, and `transfer` |
+| Router | `configure`, `upgrade`, `set_admin`, `upgrade_nft`, Flow/Lockup creation, `withdraw`, `withdraw_max`, and `void_flow` |
+| Governance | `propose`, `approve`, and `approve_cancellation`; execution is asserted permissionless while the Governance contract authenticates as the immediate invoker |
 
-Broader exact-tree coverage is still required before `VERIFY-03` can close.
+Creation and deposit assertions include the nested token `transfer`
+sub-invocations and exact arguments. Router creation assertions include the
+Router-to-core call and nested asset transfer. Governance integration tests
+exercise real Router admin rotation after the approved threshold and delay.
+
+The Paymaster is intentionally excluded because ARCH-01 designates it as
+transitional testnet code and prohibits it from the production transaction
+path. This closes `VERIFY-03` for the production contract boundary.
+
+## Accounting Invariant Evidence
+
+Property tests run 32 generated cases per property and disable per-case Soroban
+snapshot output so CI retains only actionable failure regressions.
+
+Flow properties vary deposits, rates, elapsed time, withdrawal/refund shares,
+pause duration, and restart rates. Every generated transition must preserve:
+
+- `total debt = covered debt + uncovered debt`;
+- `stream balance = covered debt + refundable balance`;
+- nonnegative balances and debt partitions;
+- contract token balance equals the recorded stream balance;
+- sender, recipient, and contract token balances conserve the minted supply;
+- pausing freezes debt and restarting accrues only from the new snapshot.
+
+Lockup properties vary total amounts, duration, elapsed time, granularity,
+initial unlock share, and withdrawal share. Every generated transition must
+preserve:
+
+- `deposited = withdrawn + refunded + remaining contract balance`;
+- `withdrawable = streamed - withdrawn`;
+- streamed, withdrawn, refunded, and remaining amounts stay within bounds;
+- cancellation freezes `streamed = deposited - refunded`;
+- terminal withdrawal leaves no contract balance and conserves token supply.
+
+The evidence is provided by
+`prop_flow_conserves_assets_and_partitions_debt`,
+`prop_flow_pause_preserves_debt_and_restart_accrues_from_snapshot`, and
+`prop_lockup_conserves_assets_through_withdrawal_and_cancellation`. This closes
+`VERIFY-04`.
 
 ## Current Verification
 
-The workspace baseline and the phase 2 implementation pass all unit and
+The Phase 2 interface, governance, and transferability changes are isolated in
+commit `a9deef4` (`feat: implement governance contract for multisig upgrades and
+add non-transferable stream enforcement logic`). The worktree was clean when
+that commit was verified, satisfying `VERIFY-01`.
+
+The workspace baseline and the phase 2 implementation pass all 113 unit,
+property, and
 cross-contract tests. Release-mode WASMs for Flow, Lockup, Stream NFT, and
 Router also build successfully. These are development artifacts, not yet the
 reproducible release artifacts required by `VERIFY-08` and `VERIFY-09`.
 
 ## Remaining Contract Gate Work
 
-- Complete exact authorization-tree coverage for every sensitive mutation and
-  upgrade path.
-- Add accounting invariant/property tests and fuzz campaigns.
+- Add fuzz campaigns for amounts, timestamps, granularity, and state
+  transitions.
 - Test failed cross-contract calls and malicious/non-standard tokens.
 - Profile worst-case Soroban resources and fees.
 - Produce and independently reproduce final release WASMs with a complete

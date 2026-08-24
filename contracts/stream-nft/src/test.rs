@@ -1,8 +1,43 @@
+extern crate std;
+
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, Events as _, Ledger as _},
-    Address, Env, IntoVal, String, Symbol,
+    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, Ledger as _},
+    Address, Env, IntoVal, String, Symbol, Val, Vec,
 };
+
+mod current_nft_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/stream_nft.wasm");
+}
+
+fn invocation(
+    env: &Env,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+) -> AuthorizedInvocation {
+    AuthorizedInvocation {
+        function: AuthorizedFunction::Contract((
+            contract.clone(),
+            Symbol::new(env, function),
+            args,
+        )),
+        sub_invocations: std::vec![],
+    }
+}
+
+fn assert_exact_auth(
+    env: &Env,
+    signer: &Address,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+) {
+    assert_eq!(
+        env.auths(),
+        std::vec![(signer.clone(), invocation(env, contract, function, args),)]
+    );
+}
 
 fn create_contract(env: &Env) -> (Address, StreamNftContractClient<'_>) {
     let admin = Address::generate(env);
@@ -28,6 +63,51 @@ fn test_constructor_sets_metadata() {
 
     assert_eq!(client.name(), name);
     assert_eq!(client.symbol(), symbol);
+}
+
+#[test]
+fn test_exact_authorization_trees_for_sensitive_nft_calls() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let new_owner = Address::generate(&env);
+    let name = String::from_str(&env, "Fundable Stream NFT");
+    let symbol = String::from_str(&env, "FSTRM");
+    let contract_id = env.register(
+        StreamNftContract,
+        StreamNftContractArgs::__constructor(&admin, &name, &symbol),
+    );
+    let client = StreamNftContractClient::new(&env, &contract_id);
+
+    client.mint(&owner, &StreamType::Flow, &42, &1, &true);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "mint",
+        (owner.clone(), StreamType::Flow, 42_u64, 1_i128, true).into_val(&env),
+    );
+
+    client.transfer(&owner, &new_owner, &1);
+    assert_exact_auth(
+        &env,
+        &owner,
+        &contract_id,
+        "transfer",
+        (owner.clone(), new_owner, 1_i128).into_val(&env),
+    );
+
+    let wasm_hash = env.deployer().upload_contract_wasm(current_nft_wasm::WASM);
+    client.upgrade(&wasm_hash);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "upgrade",
+        (wasm_hash,).into_val(&env),
+    );
 }
 
 #[test]

@@ -4,7 +4,8 @@ use super::*;
 use router::{RouterContract, RouterContractArgs, RouterContractClient};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
+    IntoVal, Symbol, Val,
 };
 
 #[contracttype]
@@ -84,6 +85,74 @@ fn set_time(env: &Env, timestamp: u64) {
     });
 }
 
+fn invocation(
+    env: &Env,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+) -> AuthorizedInvocation {
+    AuthorizedInvocation {
+        function: AuthorizedFunction::Contract((
+            contract.clone(),
+            Symbol::new(env, function),
+            args,
+        )),
+        sub_invocations: std::vec![],
+    }
+}
+
+#[test]
+fn exact_authorization_trees_for_governance_votes() {
+    let env = Env::default();
+    set_time(&env, 500);
+    let (governance_id, governance, signers) = setup(&env);
+    let target = Address::generate(&env);
+    let action = GovernanceAction::Upgrade(target, reason_hash(&env, 21));
+    let reason = reason_hash(&env, 22);
+
+    let proposal_id = governance.propose(&signers.get(0).unwrap(), &action, &false, &reason);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            signers.get(0).unwrap(),
+            invocation(
+                &env,
+                &governance_id,
+                "propose",
+                (signers.get(0).unwrap(), action, false, reason.clone(),).into_val(&env),
+            ),
+        )]
+    );
+
+    governance.approve(&signers.get(1).unwrap(), &proposal_id);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            signers.get(1).unwrap(),
+            invocation(
+                &env,
+                &governance_id,
+                "approve",
+                (signers.get(1).unwrap(), proposal_id).into_val(&env),
+            ),
+        )]
+    );
+
+    governance.approve_cancellation(&signers.get(2).unwrap(), &proposal_id);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            signers.get(2).unwrap(),
+            invocation(
+                &env,
+                &governance_id,
+                "approve_cancellation",
+                (signers.get(2).unwrap(), proposal_id).into_val(&env),
+            ),
+        )]
+    );
+}
+
 #[test]
 fn normal_upgrade_requires_three_approvals_and_48_hours() {
     let env = Env::default();
@@ -109,6 +178,9 @@ fn normal_upgrade_requires_three_approvals_and_48_hours() {
 
     set_time(&env, 1_000 + NORMAL_DELAY_SECONDS);
     governance.execute(&proposal_id);
+    // Execution is permissionless; the Governance contract authenticates as
+    // the immediate contract invoker on the governed target.
+    assert!(env.auths().is_empty());
     assert_eq!(target.wasm_hash(), Some(hash));
     assert_eq!(
         governance.get_proposal(&proposal_id).status,
