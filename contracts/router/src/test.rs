@@ -9,8 +9,24 @@ use soroban_sdk::{
     xdr, Address, Env, IntoVal, String, Symbol, TryFromVal, Val, Vec,
 };
 
-mod current_router_wasm {
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/router.wasm");
+mod release_flow_wasm {
+    soroban_sdk::contractimport!(file = "../../target/reproducible-release/flow.wasm");
+}
+
+mod release_governance_wasm {
+    soroban_sdk::contractimport!(file = "../../target/reproducible-release/governance.wasm");
+}
+
+mod release_lockup_wasm {
+    soroban_sdk::contractimport!(file = "../../target/reproducible-release/lockup.wasm");
+}
+
+mod release_nft_wasm {
+    soroban_sdk::contractimport!(file = "../../target/reproducible-release/stream_nft.wasm");
+}
+
+mod release_router_wasm {
+    soroban_sdk::contractimport!(file = "../../target/reproducible-release/router.wasm");
 }
 
 // Import the actual contract types to register them in tests
@@ -109,7 +125,7 @@ fn assert_and_print_profile(label: &str, env: &Env) {
 }
 
 #[test]
-fn profile_worst_case_release_wasm_calls() {
+fn release_wasm_critical_paths_and_resource_limits() {
     let env = Env::new_with_config(EnvTestConfig {
         capture_snapshot_at_drop: false,
     });
@@ -131,15 +147,16 @@ fn profile_worst_case_release_wasm_calls() {
     let token_admin = Address::generate(&env);
     let sac = env.register_stellar_asset_contract_v2(token_admin);
     let token = sac.address();
-    StellarAssetClient::new(&env, &token).mint(&sender, &20_000_000_000_i128);
+    StellarAssetClient::new(&env, &token).mint(&sender, &30_000_000_000_i128);
 
-    let flow_id = env.register(flow_client::WASM, (&admin,));
-    let lockup_id = env.register(lockup_client::WASM, (&admin,));
-    let router_id = env.register(current_router_wasm::WASM, (&admin,));
+    let flow_id = env.register(release_flow_wasm::WASM, (&admin,));
+    let lockup_id = env.register(release_lockup_wasm::WASM, (&admin,));
+    let router_id = env.register(release_router_wasm::WASM, (&admin,));
     let name = String::from_str(&env, "Fundable Stream NFT");
     let symbol = String::from_str(&env, "FSNFT");
-    let nft_id = env.register(nft_client::WASM, (&router_id, &name, &symbol));
-    let router = current_router_wasm::Client::new(&env, &router_id);
+    let nft_id = env.register(release_nft_wasm::WASM, (&router_id, &name, &symbol));
+    let nft = release_nft_wasm::Client::new(&env, &nft_id);
+    let router = release_router_wasm::Client::new(&env, &router_id);
     router.configure(&flow_id, &lockup_id, &nft_id);
 
     let flow_token_id = router.create_flow_stream(
@@ -154,11 +171,33 @@ fn profile_worst_case_release_wasm_calls() {
     );
     assert_and_print_profile("router_create_flow", &env);
 
+    let non_transferable_id = router.create_flow_stream(
+        &sender,
+        &recipient,
+        &token,
+        &1_000_000_000_000_000_000_i128,
+        &7,
+        &1_000,
+        &1_000_000_000_i128,
+        &false,
+    );
+    let attempted_owner = Address::generate(&env);
+    assert!(!router.get_stream(&non_transferable_id).transferable);
+    assert!(!nft.is_transferable(&non_transferable_id));
+    assert!(nft
+        .try_transfer(&recipient, &attempted_owner, &non_transferable_id)
+        .is_err());
+    assert_eq!(nft.owner_of(&non_transferable_id), recipient);
+
     env.ledger().set_timestamp(2_000);
+    let attacker = Address::generate(&env);
+    assert!(router
+        .try_withdraw(&flow_token_id, &attacker, &attacker, &1_000_000_000_i128,)
+        .is_err());
     router.withdraw(&flow_token_id, &recipient, &recipient, &1_000_000_000_i128);
     assert_and_print_profile("router_withdraw_flow", &env);
 
-    let lockup_params = current_router_wasm::CreateLockupParams {
+    let lockup_params = release_router_wasm::CreateLockupParams {
         sender: sender.clone(),
         recipient: recipient.clone(),
         token: token.clone(),
@@ -177,6 +216,62 @@ fn profile_worst_case_release_wasm_calls() {
     env.ledger().set_timestamp(12_000);
     router.withdraw_max(&lockup_token_id, &recipient, &recipient);
     assert_and_print_profile("router_withdraw_max_lockup", &env);
+}
+
+#[test]
+fn release_wasm_governance_enforces_threshold_and_timelock() {
+    let env = Env::default();
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_000,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+    env.mock_all_auths();
+
+    let signers = Vec::from_array(
+        &env,
+        [
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+            Address::generate(&env),
+        ],
+    );
+    let governance_id = env.register(release_governance_wasm::WASM, (&signers,));
+    let governance = release_governance_wasm::Client::new(&env, &governance_id);
+    let router_id = env.register(release_router_wasm::WASM, (&governance_id,));
+    let router = release_router_wasm::Client::new(&env, &router_id);
+    let new_admin = Address::generate(&env);
+    let reason_hash = soroban_sdk::BytesN::from_array(&env, &[9; 32]);
+    let action =
+        release_governance_wasm::GovernanceAction::SetAdmin(router_id.clone(), new_admin.clone());
+
+    let proposal_id = governance.propose(&signers.get(0).unwrap(), &action, &false, &reason_hash);
+    governance.approve(&signers.get(1).unwrap(), &proposal_id);
+    assert!(governance.try_execute(&proposal_id).is_err());
+    governance.approve(&signers.get(2).unwrap(), &proposal_id);
+    assert!(governance.try_execute(&proposal_id).is_err());
+
+    env.ledger()
+        .set_timestamp(1_000 + governance.normal_delay_seconds());
+    governance.execute(&proposal_id);
+    assert_eq!(
+        governance.get_proposal(&proposal_id).status,
+        release_governance_wasm::ProposalStatus::Executed
+    );
+
+    router.configure(
+        &Address::generate(&env),
+        &Address::generate(&env),
+        &Address::generate(&env),
+    );
+    assert_eq!(env.auths()[0].0, new_admin);
 }
 
 #[test]

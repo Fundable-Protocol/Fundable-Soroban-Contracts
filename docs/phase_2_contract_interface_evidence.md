@@ -149,17 +149,98 @@ mainnet invocation ceilings exposed by `soroban-sdk 25.3.x`.
 | Scenario | Instructions | Memory bytes | Footprint entries | Writes | Write bytes | Event bytes | Estimated fee (stroops) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Router Flow creation | 2,560,151 | 3,813,977 | 18 | 11 | 2,412 | 1,104 | 17,225,534 |
-| Router Flow withdrawal | 2,579,885 | 4,976,275 | 16 | 5 | 1,180 | 664 | 2,778,099 |
-| Router Lockup creation | 2,496,637 | 3,826,068 | 18 | 11 | 2,620 | 996 | 17,908,163 |
-| Router Lockup maximum withdrawal | 2,673,393 | 4,985,634 | 15 | 5 | 1,388 | 664 | 2,115,392 |
+| Router Flow withdrawal | 2,601,871 | 4,984,215 | 16 | 5 | 1,180 | 664 | 2,778,154 |
+| Router Lockup creation | 2,531,237 | 3,843,476 | 18 | 11 | 2,620 | 996 | 17,908,250 |
+| Router Lockup maximum withdrawal | 2,721,397 | 4,993,794 | 15 | 5 | 1,388 | 664 | 2,115,512 |
 
-The maxima consume approximately 0.45% of the 600M instruction limit, 11.9%
+The maxima consume approximately 0.46% of the 600M instruction limit, 11.9%
 of the 40 MiB memory limit, 18% of the 100-entry footprint limit, 22% of the
 50-write limit, 2.0% of the 132,096-byte write limit, and 6.7% of the
 16,384-byte event limit. The creation fee is dominated by persistent-entry
 rent. SDK fee estimates use a conservative bundled fee-rate snapshot and are
 not transaction quotes; deployment tooling must still use RPC simulation for
 the live fee immediately before submission. This closes `VERIFY-07`.
+
+## Reproducible Release WASMs
+
+`scripts/verify_reproducible_wasms.sh` exports the selected source commit into
+two clean directories at different paths, builds each production contract
+with an independent target cache and `--locked`, and compares the optimized
+WASMs byte-for-byte. Flow, Lockup, and Stream NFT are deliberately built before
+Router so its compile-time contract imports always come from the same clean
+build. The transitional Paymaster is excluded from the production artifact
+set under `ARCH-01`.
+
+Two clean builds of commit `23c1fdd5818d320dc519b4a0f4408a481658aa5c`
+produced identical bytes for all five artifacts:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `flow.wasm` | `f45227cc479e09a1db5a2e28b9c1291b6854aeb927e680a9d47b0432060ec632` |
+| `lockup.wasm` | `b98bafd84e9678ffddc13dca2bf705fbdcdc5f38217ab4bfef9072d7114293f9` |
+| `stream_nft.wasm` | `cca5e863d41af5aa51541b8b5f78528f7b8c231f092d4191d21e4dda82379529` |
+| `governance.wasm` | `f92a523216cc891742753b1c49f76a3f810b50d393701b43813efd2cd6568ef4` |
+| `router.wasm` | `72a96c4a668f6172f65501beb3d9867697da97d146aa05f6b2a532e7c27b1688` |
+
+Verified artifacts and `SHA256SUMS` are emitted under
+`target/reproducible-release/`. This closes `VERIFY-08`.
+
+## Release Provenance
+
+The durable, machine-readable release record is
+`release/stellar-streams-mainnet/PROVENANCE.tsv`, with artifact digests in the
+adjacent `SHA256SUMS`. It binds the five WASMs above to source commit
+`23c1fdd5818d320dc519b4a0f4408a481658aa5c` and Git tree
+`f86e34ab4dc253dac5f95a717ce99403e9bc066b`; Rust 1.92.0
+(`ded5c06cf21d2b93bffd5d884aa6e96934ee4234`, LLVM 21.1.3), Cargo 1.92.0,
+the `wasm32v1-none` target, Stellar CLI 27.0.0
+(`5a7c5fe76530bf4248477ac812fc757146b98cc4`), and Soroban SDK 25.3.1.
+
+The record also pins the complete `Cargo.lock` by SHA-256
+`024fccc21d560bf4e8eb11f62e592ad387b5f102c10e457e9a08bd53e3a9d473`
+and `rust-toolchain.toml` by SHA-256
+`fc7cfab9a268fadc2e10b4f9c07549ff3f6fb756984def6724a4347e9fb15b32`.
+`scripts/verify_release_provenance.sh` verifies the recorded Git tree, source
+files, resolved SDK version and checksum, installed tools, and every artifact
+digest. This closes `VERIFY-09`. The release remains a mainnet candidate;
+closing this evidence gate does not authorize deployment.
+
+## CTO Gate Decisions
+
+On 2026-09-01, the CTO approved freezing the current public contract
+interfaces and event schemas represented by release source commit
+`23c1fdd5818d320dc519b4a0f4408a481658aa5c` and Git tree
+`f86e34ab4dc253dac5f95a717ce99403e9bc066b`. Any subsequent public interface
+or event-schema change reopens this exit gate and requires new release WASMs,
+provenance, and approval.
+
+The Flow and Lockup fuzz harnesses required by `VERIFY-05` are present and
+compile. The sanitizer-backed campaign could not run on the current macOS
+x86_64 host because of the documented sanitizer/linker incompatibility. The
+CTO approved marking `VERIFY-05` complete on 2026-09-01, with execution of the
+campaign deferred to another compatible PC. This approval accepts the
+temporary residual verification risk; it does not represent a successful fuzz
+campaign or remove the obligation to record its eventual results.
+
+## Release-WASM Exit Gate
+
+`scripts/test_release_wasms.sh` first runs the release-provenance verifier and
+then executes the `release_wasm_` integration suite through the Soroban host.
+The tests import the checksum-pinned files from
+`target/reproducible-release/` directly; they do not register the native Rust
+contract implementations.
+
+On 2026-09-01, `./scripts/test_release_wasms.sh` passed both required tests:
+
+- Flow and Lockup creation and withdrawal through the release Router, token
+  accounting, rejection of withdrawal by a non-owner, per-stream
+  non-transferability enforcement, and Protocol 25 resource ceilings.
+- Release Governance enforcement of the three-of-five normal threshold and
+  48-hour timelock before rotating the release Router administrator.
+
+The complete locked workspace regression suite also passed: 117 tests, zero
+failures. This closes the final Phase 2 exit-gate item, “Required tests pass
+against release-mode WASMs.”
 
 ## Current Verification
 
@@ -168,15 +249,13 @@ commit `a9deef4` (`feat: implement governance contract for multisig upgrades and
 add non-transferable stream enforcement logic`). The worktree was clean when
 that commit was verified, satisfying `VERIFY-01`.
 
-The workspace baseline and the phase 2 implementation pass all 116 unit,
+The workspace baseline and the phase 2 implementation pass all 117 unit,
 property, and
-cross-contract tests. Release-mode WASMs for Flow, Lockup, Stream NFT, and
-Router also build successfully. These are development artifacts, not yet the
-reproducible release artifacts required by `VERIFY-08` and `VERIFY-09`.
+cross-contract tests. Release-mode WASMs for Flow, Lockup, Stream NFT,
+Governance, and Router reproduce byte-for-byte from clean source exports.
 
-## Remaining Contract Gate Work
+## Deferred Verification Follow-up
 
-- Add fuzz campaigns for amounts, timestamps, granularity, and state
-  transitions.
-- Produce and independently reproduce final release WASMs with a complete
-  toolchain and hash manifest.
+- Run the sanitizer-backed Flow and Lockup fuzz campaigns on a compatible PC
+  and attach the commands, duration or run count, corpus, sanitizer, toolchain,
+  and results to the release evidence.

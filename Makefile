@@ -20,6 +20,10 @@ build:
 test: build
 	cargo test
 
+# Verify and exercise the checksum-pinned mainnet-candidate WASMs.
+test-release:
+	./scripts/test_release_wasms.sh
+
 # Run tests without building WASM first (faster iteration)
 test-quick:
 	cargo test
@@ -50,4 +54,4 @@ deploy:
 		--source $(SOURCE) \
 		--network testnet
 
-.PHONY: default all build test test-quick fmt fmt-check clippy clean deploy
+.PHONY: default all build test test-release test-quick fmt fmt-check clippy clean deploy
