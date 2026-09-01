@@ -72,6 +72,8 @@ pub enum FlowError {
     SenderEqualsRecipient = 20,
     /// Rate per second must not be negative.
     NegativeRate = 21,
+    /// The token did not debit and credit the exact requested amount.
+    TokenTransferMismatch = 22,
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,8 @@ pub enum LockupError {
     SenderEqualsRecipient = 110,
     /// Start and cliff unlock amounts must be nonnegative and fit in total amount.
     InvalidUnlockAmount = 111,
+    /// The token did not debit and credit the exact requested amount.
+    TokenTransferMismatch = 112,
 }
 
 // ---------------------------------------------------------------------------

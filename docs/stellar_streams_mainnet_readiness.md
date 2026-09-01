@@ -154,8 +154,8 @@ Status: In progress. Current implementation evidence is recorded in
 - [x] **VERIFY-03:** Verify exact Soroban authorization trees for sensitive calls.
 - [x] **VERIFY-04:** Add accounting invariant/property tests.
 - [ ] **VERIFY-05:** Add fuzz tests for amounts, timestamps, granularity, and state transitions.
-- [ ] **VERIFY-06:** Test failed cross-contract calls and malicious/non-standard token behavior.
-- [ ] **VERIFY-07:** Profile CPU, memory, ledger reads/writes, footprint, and fees for worst-case calls.
+- [x] **VERIFY-06:** Test failed cross-contract calls and malicious/non-standard token behavior.
+- [x] **VERIFY-07:** Profile CPU, memory, ledger reads/writes, footprint, and fees for worst-case calls.
 - [ ] **VERIFY-08:** Produce reproducible release WASMs.
 - [ ] **VERIFY-09:** Record source commit, Rust toolchain, Stellar CLI,
   Soroban SDK, dependency lockfile, and SHA-256 for every WASM.

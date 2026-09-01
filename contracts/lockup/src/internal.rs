@@ -24,6 +24,27 @@ use shared::events;
 use shared::types::{CreateLockupParams, LockupStream};
 use soroban_sdk::{panic_with_error, token, Address, Env};
 
+/// Transfer tokens and require exact sender debit and recipient credit.
+/// Mismatches panic and atomically roll back the enclosing Soroban call.
+fn transfer_exact(env: &Env, token_addr: &Address, from: &Address, to: &Address, amount: i128) {
+    if from == to {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+
+    let token_client = token::Client::new(env, token_addr);
+    let from_before = token_client.balance(from);
+    let to_before = token_client.balance(to);
+    token_client.transfer(from, to, &amount);
+    let from_after = token_client.balance(from);
+    let to_after = token_client.balance(to);
+
+    if from_before.checked_sub(from_after) != Some(amount)
+        || to_after.checked_sub(to_before) != Some(amount)
+    {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read-only vesting calculations
 // ---------------------------------------------------------------------------
@@ -217,11 +238,12 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     );
 
     // Transfer tokens from sender into the contract (fully pre-funded)
-    let token_client = token::Client::new(env, &params.token);
-    token_client.transfer(
+    transfer_exact(
+        env,
+        &params.token,
         &params.sender,
-        env.current_contract_address(),
-        &params.total_amount,
+        &env.current_contract_address(),
+        params.total_amount,
     );
 
     // Emit event
@@ -292,8 +314,13 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     );
 
     // Transfer tokens to recipient
-    let token_client = token::Client::new(env, &token_addr);
-    token_client.transfer(&env.current_contract_address(), to, &amount);
+    transfer_exact(
+        env,
+        &token_addr,
+        &env.current_contract_address(),
+        to,
+        amount,
+    );
 
     events::emit_lockup_withdraw(env, stream_id, to, caller, amount);
 }
@@ -359,8 +386,13 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
 
     // Refund unvested tokens to sender
     if sender_amount > 0 {
-        let token_client = token::Client::new(env, &token_addr);
-        token_client.transfer(&env.current_contract_address(), &sender, &sender_amount);
+        transfer_exact(
+            env,
+            &token_addr,
+            &env.current_contract_address(),
+            &sender,
+            sender_amount,
+        );
     }
 
     events::emit_lockup_canceled(

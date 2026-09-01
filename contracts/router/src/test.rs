@@ -3,9 +3,15 @@ extern crate std;
 use super::*;
 use soroban_sdk::testutils::Events as _;
 use soroban_sdk::{
-    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
+    testutils::{
+        Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Ledger as _,
+    },
     xdr, Address, Env, IntoVal, String, Symbol, TryFromVal, Val, Vec,
 };
+
+mod current_router_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/router.wasm");
+}
 
 // Import the actual contract types to register them in tests
 use flow::{FlowContract, FlowContractArgs};
@@ -69,6 +75,108 @@ fn register_protocol(env: &Env, admin: &Address) -> (Address, Address, Address, 
     );
     RouterContractClient::new(env, &router_id).configure(&flow_id, &lockup_id, &nft_id);
     (flow_id, lockup_id, nft_id, router_id)
+}
+
+fn assert_and_print_profile(label: &str, env: &Env) {
+    let resources = env.cost_estimate().resources();
+    let fee = env.cost_estimate().fee();
+    let footprint_entries = resources.disk_read_entries + resources.memory_read_entries;
+
+    std::println!(
+        "RESOURCE_PROFILE|{label}|instructions={}|memory_bytes={}|disk_read_entries={}|memory_read_entries={}|footprint_entries={}|write_entries={}|disk_read_bytes={}|write_bytes={}|event_bytes={}|persistent_rent_ledger_bytes={}|estimated_fee_stroops={}",
+        resources.instructions,
+        resources.mem_bytes,
+        resources.disk_read_entries,
+        resources.memory_read_entries,
+        footprint_entries,
+        resources.write_entries,
+        resources.disk_read_bytes,
+        resources.write_bytes,
+        resources.contract_events_size_bytes,
+        resources.persistent_rent_ledger_bytes,
+        fee.total,
+    );
+
+    // Protocol 25 mainnet ceilings exposed by soroban-sdk 25.3.x.
+    assert!(resources.instructions <= 600_000_000);
+    assert!(resources.mem_bytes <= 41_943_040);
+    assert!(resources.disk_read_entries <= 100);
+    assert!(footprint_entries <= 100);
+    assert!(resources.write_entries <= 50);
+    assert!(resources.disk_read_bytes <= 200_000);
+    assert!(resources.write_bytes <= 132_096);
+    assert!(resources.contract_events_size_bytes <= 16_384);
+}
+
+#[test]
+fn profile_worst_case_release_wasm_calls() {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+        timestamp: 1_000,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let sac = env.register_stellar_asset_contract_v2(token_admin);
+    let token = sac.address();
+    StellarAssetClient::new(&env, &token).mint(&sender, &20_000_000_000_i128);
+
+    let flow_id = env.register(flow_client::WASM, (&admin,));
+    let lockup_id = env.register(lockup_client::WASM, (&admin,));
+    let router_id = env.register(current_router_wasm::WASM, (&admin,));
+    let name = String::from_str(&env, "Fundable Stream NFT");
+    let symbol = String::from_str(&env, "FSNFT");
+    let nft_id = env.register(nft_client::WASM, (&router_id, &name, &symbol));
+    let router = current_router_wasm::Client::new(&env, &router_id);
+    router.configure(&flow_id, &lockup_id, &nft_id);
+
+    let flow_token_id = router.create_flow_stream(
+        &sender,
+        &recipient,
+        &token,
+        &1_000_000_000_000_000_000_i128,
+        &7,
+        &1_000,
+        &10_000_000_000_i128,
+        &true,
+    );
+    assert_and_print_profile("router_create_flow", &env);
+
+    env.ledger().set_timestamp(2_000);
+    router.withdraw(&flow_token_id, &recipient, &recipient, &1_000_000_000_i128);
+    assert_and_print_profile("router_withdraw_flow", &env);
+
+    let lockup_params = current_router_wasm::CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 10_000_000_000_i128,
+        start_time: 2_000,
+        end_time: 12_000,
+        cliff_time: 7_000,
+        start_unlock_amount: 1_000_000_000_i128,
+        cliff_unlock_amount: 1_000_000_000_i128,
+        granularity: 3_600,
+        cancelable: true,
+    };
+    let lockup_token_id = router.create_lockup_stream(&lockup_params, &true);
+    assert_and_print_profile("router_create_lockup", &env);
+
+    env.ledger().set_timestamp(12_000);
+    router.withdraw_max(&lockup_token_id, &recipient, &recipient);
+    assert_and_print_profile("router_withdraw_max_lockup", &env);
 }
 
 #[test]

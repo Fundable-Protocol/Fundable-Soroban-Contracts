@@ -24,6 +24,28 @@ use shared::math;
 use shared::types::FlowStream;
 use soroban_sdk::{panic_with_error, token, Address, Env};
 
+/// Transfer tokens and reject non-standard success responses that do not move
+/// the exact requested amount. Any mismatch panics, so Soroban rolls back both
+/// the external call and all state changes made by the current invocation.
+fn transfer_exact(env: &Env, token_addr: &Address, from: &Address, to: &Address, amount: i128) {
+    if from == to {
+        panic_with_error!(env, FlowError::TokenTransferMismatch);
+    }
+
+    let token_client = token::Client::new(env, token_addr);
+    let from_before = token_client.balance(from);
+    let to_before = token_client.balance(to);
+    token_client.transfer(from, to, &amount);
+    let from_after = token_client.balance(from);
+    let to_after = token_client.balance(to);
+
+    if from_before.checked_sub(from_after) != Some(amount)
+        || to_after.checked_sub(to_before) != Some(amount)
+    {
+        panic_with_error!(env, FlowError::TokenTransferMismatch);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read-only debt calculations
 // ---------------------------------------------------------------------------
@@ -193,8 +215,13 @@ pub fn deposit(env: &Env, stream_id: u64, funder: &Address, amount: i128) {
     }
 
     // Transfer tokens from funder to this contract
-    let token_client = token::Client::new(env, &stream.token);
-    token_client.transfer(funder, env.current_contract_address(), &amount);
+    transfer_exact(
+        env,
+        &stream.token,
+        funder,
+        &env.current_contract_address(),
+        amount,
+    );
 
     // Update stream balance
     stream.balance = stream
@@ -272,8 +299,13 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     // Transfer tokens to recipient (SKILL.md §5: transfer-before-state-update
     // not needed here since Soroban doesn't have reentrancy, but we update
     // state first by convention)
-    let token_client = token::Client::new(env, &stream.token);
-    token_client.transfer(&env.current_contract_address(), to, &amount);
+    transfer_exact(
+        env,
+        &stream.token,
+        &env.current_contract_address(),
+        to,
+        amount,
+    );
 
     events::emit_flow_withdraw(env, stream_id, to, caller, amount);
 }
@@ -420,8 +452,13 @@ pub fn refund(env: &Env, stream_id: u64, amount: i128) {
     storage::set_stream(env, stream_id, &stream);
 
     // Transfer back to sender
-    let token_client = token::Client::new(env, &token_addr);
-    token_client.transfer(&env.current_contract_address(), &sender, &amount);
+    transfer_exact(
+        env,
+        &token_addr,
+        &env.current_contract_address(),
+        &sender,
+        amount,
+    );
 
     events::emit_flow_refunded(env, stream_id, &sender, amount);
 }

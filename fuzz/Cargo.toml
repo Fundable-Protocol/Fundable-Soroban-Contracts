@@ -1,0 +1,32 @@
+[package]
+name = "fundable-contract-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+flow = { path = "../contracts/flow" }
+libfuzzer-sys = "=0.4.10"
+lockup = { path = "../contracts/lockup" }
+shared = { path = "../packages/shared" }
+soroban-sdk = { version = "25.3.1", features = ["testutils"] }
+
+[[bin]]
+name = "flow_state_machine"
+path = "fuzz_targets/flow_state_machine.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lockup_state_machine"
+path = "fuzz_targets/lockup_state_machine.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

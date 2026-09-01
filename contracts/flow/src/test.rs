@@ -15,12 +15,81 @@ extern crate std;
 use super::*;
 use proptest::prelude::*;
 use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error,
     testutils::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Ledger, LedgerInfo,
     },
     token::{StellarAssetClient, TokenClient},
     Address, Env, IntoVal, Symbol, Val, Vec,
 };
+
+#[contracttype]
+#[derive(Clone)]
+enum AdversarialTokenKey {
+    Balance(Address),
+    Mode,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum AdversarialTokenError {
+    Rejected = 1,
+    InsufficientBalance = 2,
+}
+
+#[contract]
+struct AdversarialToken;
+
+#[contractimpl]
+impl AdversarialToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &amount);
+    }
+
+    pub fn set_mode(env: Env, mode: u32) {
+        env.storage()
+            .instance()
+            .set(&AdversarialTokenKey::Mode, &mode);
+    }
+
+    pub fn balance(env: Env, account: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&AdversarialTokenKey::Balance(account))
+            .unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let mode: u32 = env
+            .storage()
+            .instance()
+            .get(&AdversarialTokenKey::Mode)
+            .unwrap_or(0);
+        if mode == 1 {
+            panic_with_error!(&env, AdversarialTokenError::Rejected);
+        }
+        if mode == 2 {
+            return;
+        }
+
+        let from_balance = Self::balance(env.clone(), from.clone());
+        if amount < 0 || from_balance < amount {
+            panic_with_error!(&env, AdversarialTokenError::InsufficientBalance);
+        }
+        let to_balance = Self::balance(env.clone(), to.clone());
+        let credited = if mode == 3 { amount - 1 } else { amount };
+        env.storage().persistent().set(
+            &AdversarialTokenKey::Balance(from),
+            &(from_balance - amount),
+        );
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &(to_balance + credited));
+    }
+}
 
 mod current_flow_wasm {
     soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/flow.wasm");
@@ -1502,4 +1571,60 @@ fn test_depletion_time_calculation() {
     );
     let dt = client.depletion_time_of(&stream_id);
     assert!(dt > 1000);
+}
+
+#[test]
+fn test_failed_and_non_standard_token_calls_roll_back_flow_state() {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env.ledger().set_protocol_version(25);
+    env.ledger().set_timestamp(1_000);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token = env.register(AdversarialToken, ());
+    let adversarial = AdversarialTokenClient::new(&env, &token);
+    adversarial.mint(&sender, &(1_000 * ONE_TOKEN));
+    let contract_id = env.register(FlowContract, FlowContractArgs::__constructor(&admin));
+    let client = FlowContractClient::new(&env, &contract_id);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0,
+    );
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client
+            .try_deposit(&stream_id, &sender, &(100 * ONE_TOKEN))
+            .is_err());
+        assert_eq!(client.get_balance(&stream_id), 0);
+        assert_eq!(adversarial.balance(&sender), 1_000 * ONE_TOKEN);
+        assert_eq!(adversarial.balance(&contract_id), 0);
+    }
+
+    adversarial.set_mode(&0);
+    client.deposit(&stream_id, &sender, &(100 * ONE_TOKEN));
+    env.ledger().set_timestamp(1_010);
+    let balance_before = client.get_balance(&stream_id);
+    let debt_before = client.total_debt_of(&stream_id);
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client
+            .try_withdraw(&stream_id, &recipient, &recipient, &ONE_TOKEN)
+            .is_err());
+        assert_eq!(client.get_balance(&stream_id), balance_before);
+        assert_eq!(client.total_debt_of(&stream_id), debt_before);
+        assert_eq!(adversarial.balance(&recipient), 0);
+
+        assert!(client.try_refund(&stream_id, &sender, &ONE_TOKEN).is_err());
+        assert_eq!(client.get_balance(&stream_id), balance_before);
+        assert_eq!(adversarial.balance(&contract_id), balance_before);
+    }
 }

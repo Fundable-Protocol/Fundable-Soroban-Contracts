@@ -103,6 +103,64 @@ The evidence is provided by
 `prop_lockup_conserves_assets_through_withdrawal_and_cancellation`. This closes
 `VERIFY-04`.
 
+## Fuzz Harness Status
+
+Coverage-guided state-machine targets now exist for Flow and Lockup under
+`fuzz/fuzz_targets`. They generate bounded amounts, timestamps, Lockup
+granularity, authorized and unauthorized callers, and up to 32 lifecycle
+transitions while checking the accounting invariants above after every call.
+Both targets compile with nightly Rust and `libfuzzer-sys 0.4.10`.
+
+The AddressSanitizer campaign remains deferred because the local
+`x86_64-apple-darwin` linker rejects sanitizer-instrumented Soroban `cdylib`
+initializers. `VERIFY-05` remains open until the campaigns run in a compatible
+Linux CI environment (or successfully run locally with a supported sanitizer
+configuration).
+
+## External Token Failure Evidence
+
+Flow and Lockup now verify the token balances of both transfer participants
+before and after every inbound and outbound transfer. A successful token call
+is accepted only when the sender is debited and the recipient is credited by
+exactly the requested amount; otherwise the engine raises
+`TokenTransferMismatch` and the complete Soroban invocation rolls back.
+
+The adversarial-token tests exercise three behaviors on creation/deposit,
+withdrawal, refund, and cancellation paths:
+
+- an explicit cross-contract rejection;
+- a no-op transfer that falsely returns success;
+- a fee-on-transfer that credits one unit less than requested.
+
+Every case must preserve the pre-call stream record, ID allocation, contract
+token balance, sender balance, and recipient balance. Fully malicious tokens
+can still lie consistently from both `transfer` and `balance`; therefore token
+identity remains a product-level trust decision, while such a token cannot
+counterfeit or drain a different token's isolated balance. This closes
+`VERIFY-06`.
+
+## Release-WASM Resource Profile
+
+`profile_worst_case_release_wasm_calls` registers the optimized Flow, Lockup,
+Router, and Stream NFT WASMs and profiles the heaviest routed creation and
+withdrawal paths. The test checks every measurement against the Protocol 25
+mainnet invocation ceilings exposed by `soroban-sdk 25.3.x`.
+
+| Scenario | Instructions | Memory bytes | Footprint entries | Writes | Write bytes | Event bytes | Estimated fee (stroops) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Router Flow creation | 2,560,151 | 3,813,977 | 18 | 11 | 2,412 | 1,104 | 17,225,534 |
+| Router Flow withdrawal | 2,579,885 | 4,976,275 | 16 | 5 | 1,180 | 664 | 2,778,099 |
+| Router Lockup creation | 2,496,637 | 3,826,068 | 18 | 11 | 2,620 | 996 | 17,908,163 |
+| Router Lockup maximum withdrawal | 2,673,393 | 4,985,634 | 15 | 5 | 1,388 | 664 | 2,115,392 |
+
+The maxima consume approximately 0.45% of the 600M instruction limit, 11.9%
+of the 40 MiB memory limit, 18% of the 100-entry footprint limit, 22% of the
+50-write limit, 2.0% of the 132,096-byte write limit, and 6.7% of the
+16,384-byte event limit. The creation fee is dominated by persistent-entry
+rent. SDK fee estimates use a conservative bundled fee-rate snapshot and are
+not transaction quotes; deployment tooling must still use RPC simulation for
+the live fee immediately before submission. This closes `VERIFY-07`.
+
 ## Current Verification
 
 The Phase 2 interface, governance, and transferability changes are isolated in
@@ -110,7 +168,7 @@ commit `a9deef4` (`feat: implement governance contract for multisig upgrades and
 add non-transferable stream enforcement logic`). The worktree was clean when
 that commit was verified, satisfying `VERIFY-01`.
 
-The workspace baseline and the phase 2 implementation pass all 113 unit,
+The workspace baseline and the phase 2 implementation pass all 116 unit,
 property, and
 cross-contract tests. Release-mode WASMs for Flow, Lockup, Stream NFT, and
 Router also build successfully. These are development artifacts, not yet the
@@ -120,7 +178,5 @@ reproducible release artifacts required by `VERIFY-08` and `VERIFY-09`.
 
 - Add fuzz campaigns for amounts, timestamps, granularity, and state
   transitions.
-- Test failed cross-contract calls and malicious/non-standard tokens.
-- Profile worst-case Soroban resources and fees.
 - Produce and independently reproduce final release WASMs with a complete
   toolchain and hash manifest.

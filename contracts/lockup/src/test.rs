@@ -16,12 +16,81 @@ extern crate std;
 use super::*;
 use proptest::prelude::*;
 use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error,
     testutils::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Ledger, LedgerInfo,
     },
     token::{StellarAssetClient, TokenClient},
     Address, Env, IntoVal, Symbol, Val, Vec,
 };
+
+#[contracttype]
+#[derive(Clone)]
+enum AdversarialTokenKey {
+    Balance(Address),
+    Mode,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum AdversarialTokenError {
+    Rejected = 1,
+    InsufficientBalance = 2,
+}
+
+#[contract]
+struct AdversarialToken;
+
+#[contractimpl]
+impl AdversarialToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &amount);
+    }
+
+    pub fn set_mode(env: Env, mode: u32) {
+        env.storage()
+            .instance()
+            .set(&AdversarialTokenKey::Mode, &mode);
+    }
+
+    pub fn balance(env: Env, account: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&AdversarialTokenKey::Balance(account))
+            .unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let mode: u32 = env
+            .storage()
+            .instance()
+            .get(&AdversarialTokenKey::Mode)
+            .unwrap_or(0);
+        if mode == 1 {
+            panic_with_error!(&env, AdversarialTokenError::Rejected);
+        }
+        if mode == 2 {
+            return;
+        }
+
+        let from_balance = Self::balance(env.clone(), from.clone());
+        if amount < 0 || from_balance < amount {
+            panic_with_error!(&env, AdversarialTokenError::InsufficientBalance);
+        }
+        let to_balance = Self::balance(env.clone(), to.clone());
+        let credited = if mode == 3 { amount - 1 } else { amount };
+        env.storage().persistent().set(
+            &AdversarialTokenKey::Balance(from),
+            &(from_balance - amount),
+        );
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &(to_balance + credited));
+    }
+}
 
 mod current_lockup_wasm {
     soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/lockup.wasm");
@@ -1321,4 +1390,65 @@ fn test_create_rejects_unlock_sum_overflow() {
         cancelable: true,
     };
     client.create(&params);
+}
+
+#[test]
+fn test_failed_and_non_standard_token_calls_roll_back_lockup_state() {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env.ledger().set_protocol_version(25);
+    env.ledger().set_timestamp(1_000);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token = env.register(AdversarialToken, ());
+    let adversarial = AdversarialTokenClient::new(&env, &token);
+    adversarial.mint(&sender, &(1_000 * ONE_TOKEN));
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
+    let client = LockupContractClient::new(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1_000,
+        end_time: 1_100,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client.try_create(&params).is_err());
+        assert!(client.try_get_stream(&1).is_err());
+        assert_eq!(adversarial.balance(&sender), 1_000 * ONE_TOKEN);
+        assert_eq!(adversarial.balance(&contract_id), 0);
+    }
+
+    adversarial.set_mode(&0);
+    let stream_id = client.create(&params);
+    assert_eq!(stream_id, 1);
+    env.ledger().set_timestamp(1_050);
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client
+            .try_withdraw(&stream_id, &recipient, &recipient, &(10 * ONE_TOKEN))
+            .is_err());
+        let stream = client.get_stream(&stream_id);
+        assert_eq!(stream.withdrawn_amount, 0);
+        assert_eq!(stream.refunded_amount, 0);
+        assert_eq!(adversarial.balance(&recipient), 0);
+
+        assert!(client.try_cancel(&stream_id, &sender).is_err());
+        let stream = client.get_stream(&stream_id);
+        assert!(!stream.was_canceled);
+        assert_eq!(stream.refunded_amount, 0);
+        assert_eq!(adversarial.balance(&contract_id), 100 * ONE_TOKEN);
+    }
 }
