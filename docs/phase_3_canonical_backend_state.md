@@ -185,6 +185,14 @@ transaction IDs within a relayer, and global uniqueness for non-null on-chain
 transaction hashes within a Stellar network. The database, not a pre-insert
 lookup, is the final concurrency-safe enforcement point.
 
+Implementation evidence: `backend-main` commit `56f172e` adds the
+`PaymentStreamSubmission` schema and migration
+`0026_payment-stream-submissions.sql`. It includes all required identifiers,
+failure details, lifecycle timestamps, ledger confirmation fields, positive
+attempt and vocabulary checks, recovery indexes, and partial unique indexes for
+relayer and on-chain transaction identities. The transition regression covers
+every terminal state and representative allowed and rejected transitions.
+
 ### Activity and indexed event (DATA-05)
 
 Activity is append-only. Store network, contract address, event name, ledger
@@ -298,8 +306,8 @@ dead-letter state/queue without being mislabeled as chain failure.
 ## Implementation Order and Exit Evidence
 
 1. Add constants/types and transition tests for the two state machines.
-2. Add the stream, intent, submission, activity, and indexer-checkpoint schema
-   changes plus migration/backfill for `transfered`.
+2. Add the stream, intent, activity, and indexer-checkpoint schema changes. The
+   submission schema and `transfered` migration are complete.
 3. Add repository methods that make idempotency and state transitions atomic.
 4. Update existing payment-stream reads/statistics to use canonical statuses.
 5. Add restart reconciliation and event replay integration tests.

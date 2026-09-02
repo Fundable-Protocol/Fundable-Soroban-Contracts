@@ -180,7 +180,7 @@ Status: In progress. The proposed implementation target is recorded in
 - [x] **DATA-02:** Define the database stream state machine.
 - [x] **DATA-03:** Migrate legacy `transfered` values: normalize transfer
   activity to `transferred` and canonicalize legacy stream status to `completed`.
-- [ ] **DATA-04:** Add a transaction/submission table containing relayer ID,
+- [x] **DATA-04:** Add a transaction/submission table containing relayer ID,
   relayer transaction ID, on-chain hash, status, failure reason, and timestamps.
 - [ ] **DATA-05:** Add an idempotent activity/event table.
 - [ ] **DATA-06:** Add deployment-scoped uniqueness for NFT token IDs.
