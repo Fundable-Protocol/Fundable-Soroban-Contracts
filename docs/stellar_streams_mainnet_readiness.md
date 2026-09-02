@@ -173,18 +173,22 @@ Status: In progress. Current implementation evidence is recorded in
 This phase can run in parallel with Phase 2, but cannot finish until the
 contract state model and event schemas are frozen.
 
-- [ ] **DATA-01:** Define the database transaction state machine.
-- [ ] **DATA-02:** Define the database stream state machine.
-- [ ] **DATA-03:** Migrate `transfered` to `transferred`.
+Status: In progress. The proposed implementation target is recorded in
+[Phase 3 Canonical Backend State Specification](phase_3_canonical_backend_state.md).
+
+- [x] **DATA-01:** Define the database transaction state machine.
+- [x] **DATA-02:** Define the database stream state machine.
+- [x] **DATA-03:** Migrate legacy `transfered` values: normalize transfer
+  activity to `transferred` and canonicalize legacy stream status to `completed`.
 - [ ] **DATA-04:** Add a transaction/submission table containing relayer ID,
   relayer transaction ID, on-chain hash, status, failure reason, and timestamps.
 - [ ] **DATA-05:** Add an idempotent activity/event table.
 - [ ] **DATA-06:** Add deployment-scoped uniqueness for NFT token IDs.
 - [ ] **DATA-07:** Add uniqueness for transaction hashes.
-- [ ] **DATA-08:** Define idempotency behavior for creation and mutation requests.
-- [ ] **DATA-09:** Mark chain-derived fields as canonical.
-- [ ] **DATA-10:** Treat user metadata as display-only unless independently verified.
-- [ ] **DATA-11:** Define status recovery after backend or relayer restarts.
+- [x] **DATA-08:** Define idempotency behavior for creation and mutation requests.
+- [x] **DATA-09:** Mark chain-derived fields as canonical.
+- [x] **DATA-10:** Treat user metadata as display-only unless independently verified.
+- [x] **DATA-11:** Define status recovery after backend or relayer restarts.
 
 ### Exit Gate
 
