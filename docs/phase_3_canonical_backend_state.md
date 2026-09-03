@@ -156,6 +156,18 @@ and applies when `core_stream_id IS NOT NULL`.
 The legacy `stream_id` field must be migrated to the NFT token ID meaning. It
 must never hold a transaction hash or an unscoped core engine ID.
 
+Implementation evidence: `backend-main` migration
+`0028_canonical-payment-stream-identities.sql` adds the nullable
+`stream_nft_contract` deployment scope and partial unique indexes for
+`(network, stream_nft_contract, stream_id)` and
+`(network, transaction_hash)`. Legacy rows remain unscoped because no trusted
+deployment address is available for a safe backfill. New identifiers are
+trimmed and canonicalized before persistence, database checks preserve their
+canonical casing, and PostgreSQL unique violations are mapped to the same
+duplicate-identity response as pre-insert lookups. A read-only production
+preflight found no existing transaction-hash duplicate groups; the migration
+remains unapplied until the planned live-database rollout.
+
 ### Intent
 
 An intent record must contain an opaque request ID, authenticated wallet,
