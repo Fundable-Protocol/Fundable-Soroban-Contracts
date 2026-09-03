@@ -2,7 +2,7 @@
 
 Status: Ready for review  
 Version: 1.0  
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 ## Purpose and Scope
 
@@ -210,6 +210,15 @@ If the RPC provider supplies a stable event ID, also require
 `UNIQUE (network, event_id)`. Replaying a ledger range must result in conflict
 no-op/upsert behavior, never duplicate activity or repeat a projection change.
 
+Implementation evidence: `backend-main` commits `440066a` and `5618a8a` extend
+the append-only `PaymentStreamActivity` table through migration
+`0027_canonical-payment-stream-events.sql`. The table stores network, contract
+and event identity, ledger ordering, decoded public/core IDs, raw event data,
+and schema version. Partial unique indexes enforce both canonical chain-event
+identity and stable RPC event identity. Existing rows are backfilled from their
+stream projection, the stream link is nullable for pre-projection ingestion,
+and `ON DELETE SET NULL` preserves event history.
+
 ### Status spelling migration (DATA-03)
 
 The only accepted activity spelling is `transferred`; compatibility code maps
@@ -306,8 +315,8 @@ dead-letter state/queue without being mislabeled as chain failure.
 ## Implementation Order and Exit Evidence
 
 1. Add constants/types and transition tests for the two state machines.
-2. Add the stream, intent, activity, and indexer-checkpoint schema changes. The
-   submission schema and `transfered` migration are complete.
+2. Add the stream, intent, and indexer-checkpoint schema changes. The
+   submission/activity schemas and `transfered` migration are complete.
 3. Add repository methods that make idempotency and state transitions atomic.
 4. Update existing payment-stream reads/statistics to use canonical statuses.
 5. Add restart reconciliation and event replay integration tests.
