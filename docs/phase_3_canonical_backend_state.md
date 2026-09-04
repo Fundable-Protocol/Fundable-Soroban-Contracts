@@ -1,8 +1,8 @@
 # Phase 3 Canonical Backend State Specification
 
-Status: Ready for review  
+Status: Implemented; production migration pending
 Version: 1.0  
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Purpose and Scope
 
@@ -334,3 +334,31 @@ dead-letter state/queue without being mislabeled as chain failure.
 5. Add restart reconciliation and event replay integration tests.
 6. Record the backend commit, migration output, test results, and review in the
    mainnet-readiness checklist before closing the remaining phase 3 items.
+
+## Exit-Gate Implementation Evidence
+
+`backend-main` commit `d050c0c` completes the Phase 3 persistence boundary:
+
+- migration `0029_payment-stream-intents-and-transitions.sql` repairs the
+  migration/schema drift and adds durable intents plus append-only transition
+  history;
+- migration `0030_canonical-payment-stream-projection.sql` adds the
+  chain-derived owner, engine identity, lifecycle, balance/debt/refund, and
+  reconciliation ordering fields;
+- idempotency is atomically scoped to wallet, network, and key, with a
+  deterministic normalized-intent hash and conflict behavior for key reuse;
+- the relayer call happens only after `submitted` is committed, and scheduled
+  recovery reconciles unresolved submissions after a restart;
+- relayer-reported confirmation records the transaction hash but remains
+  `pending`; only finalized indexed chain data can atomically update the
+  stream projection, append the event, and transition the submission to
+  `confirmed`;
+- public API writes cannot create, mutate, or append canonical Stellar stream
+  state, and legacy browser-authored Stellar rows are excluded from canonical
+  reads and statistics.
+
+Verification on 2026-09-04: the two focused payment-stream suites passed 13/13
+tests, `pnpm build` passed, scoped ESLint passed without findings, and
+`drizzle-kit generate` reported no schema changes. Migrations `0026` through
+`0030` are intentionally not applied to the live database until the
+coordinated production rollout.
