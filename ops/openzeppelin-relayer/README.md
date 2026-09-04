@@ -42,13 +42,19 @@ docker compose \
 
 The output must exactly match the pinned image reference above.
 
-## Testnet fee strategy
+## Testnet fee strategy and token allowlist
 
 The tracked testnet configuration template is
 `config.testnet.example.json`. Its Stellar relayer policy sets
 `fee_payment_strategy` to `user`, which is required by the native OpenZeppelin
 gas-abstraction flow. Deploy the template as `config/config.json` and keep the
 referenced signer keystore and passphrase outside this repository.
+
+The allowlist contains only Circle's Stellar testnet USDC Soroban token
+contract, `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`. The
+deployed Fundable Paymaster must independently allow the same contract. Fee
+caps are configured separately; do not add another token to one allowlist
+without adding and verifying it in the other.
 
 Validate the non-secret policy fields before starting the service:
 
@@ -60,6 +66,11 @@ node -e '
   if (relayer?.network_type !== "stellar") throw new Error("expected Stellar");
   if (relayer?.policies?.fee_payment_strategy !== "user") {
     throw new Error("expected user fee strategy");
+  }
+  const assets = relayer?.policies?.allowed_tokens?.map(({ asset }) => asset);
+  const expected = ["CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"];
+  if (JSON.stringify(assets) !== JSON.stringify(expected)) {
+    throw new Error("unexpected testnet token allowlist");
   }
 '
 ```

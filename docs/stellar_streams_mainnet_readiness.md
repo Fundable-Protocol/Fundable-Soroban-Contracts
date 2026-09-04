@@ -215,7 +215,7 @@ intent model.
 
 - [x] **RELAYER-01:** Pin the production OZ Relayer version.
 - [x] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
-- [ ] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
+- [x] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
 - [ ] **RELAYER-04:** Configure strict per-token maximum fees.
 - [ ] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
 - [ ] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
@@ -234,6 +234,17 @@ deployment template set the `fundable-stellar-relayer` policy to
 `fee_payment_strategy: "user"`. Validation confirms the entry is a Stellar
 testnet relayer and uses the native user-fee gas-abstraction strategy supported
 by OpenZeppelin Relayer `v1.6.0`.
+
+RELAYER-03 evidence: the active ignored testnet configuration and tracked
+deployment template restrict `allowed_tokens` to Circle's Stellar testnet USDC
+Soroban contract, `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`.
+Circle identifies its underlying testnet asset as
+`USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5`; live
+contract reads returned symbol `USDC`, seven decimals, and that asset identity.
+The deployed testnet Paymaster
+`CD4DQI4RKCPHGNROBXS4QWNGAHMYDTJK3GEGJZWLQFAWAVO6CYPSIXMM` returned `true`
+for `is_fee_token_allowed` on the same Soroban contract. Per-token maximums
+remain intentionally unset here and are tracked by RELAYER-04.
 
 ### Backend API
 
