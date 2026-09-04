@@ -53,8 +53,17 @@ referenced signer keystore and passphrase outside this repository.
 The allowlist contains only Circle's Stellar testnet USDC Soroban token
 contract, `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`. The
 deployed Fundable Paymaster must independently allow the same contract. Fee
-caps are configured separately; do not add another token to one allowlist
-without adding and verifying it in the other.
+authorization is capped at `10,000,000` of USDC's seven-decimal base units,
+exactly `1.0000000 USDC`. This is a maximum the user may authorize, not a fixed
+charge. OpenZeppelin Relayer rejects a request whose signed `max_fee_amount`
+exceeds it. Do not add another token to one allowlist without adding and
+verifying it in the other and assigning an explicit cap.
+
+The `1 USDC` testnet ceiling is an operational guardrail with approximately
+3x price-adjusted headroom over the repository's conservative `1.790825 XLM`
+worst-case routed-creation estimate using the 2026-09-04 reference price of
+`$0.1798/XLM`. Review it against live fee and XLM/USDC telemetry before mainnet
+rollout and whenever either nears the ceiling.
 
 Validate the non-secret policy fields before starting the service:
 
@@ -71,6 +80,12 @@ node -e '
   const expected = ["CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"];
   if (JSON.stringify(assets) !== JSON.stringify(expected)) {
     throw new Error("unexpected testnet token allowlist");
+  }
+  const cap = relayer.policies.allowed_tokens[0].max_allowed_fee;
+  if (cap !== 10_000_000) throw new Error("unexpected USDC fee cap");
+  const accepts = (fee) => Number.isSafeInteger(fee) && fee > 0 && fee <= cap;
+  if (!accepts(cap) || accepts(cap + 1)) {
+    throw new Error("USDC fee cap boundary check failed");
   }
 '
 ```

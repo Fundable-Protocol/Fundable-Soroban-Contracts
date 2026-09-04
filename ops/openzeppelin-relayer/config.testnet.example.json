@@ -11,7 +11,8 @@
         "fee_payment_strategy": "user",
         "allowed_tokens": [
           {
-            "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+            "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+            "max_allowed_fee": 10000000
           }
         ],
         "timeout_seconds": 60

@@ -216,7 +216,7 @@ intent model.
 - [x] **RELAYER-01:** Pin the production OZ Relayer version.
 - [x] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
 - [x] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
-- [ ] **RELAYER-04:** Configure strict per-token maximum fees.
+- [x] **RELAYER-04:** Configure strict per-token maximum fees.
 - [ ] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
 - [ ] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
 - [ ] **RELAYER-07:** Verify FeeForwarder source, ABI, deployment, and WASM hash.
@@ -244,7 +244,21 @@ contract reads returned symbol `USDC`, seven decimals, and that asset identity.
 The deployed testnet Paymaster
 `CD4DQI4RKCPHGNROBXS4QWNGAHMYDTJK3GEGJZWLQFAWAVO6CYPSIXMM` returned `true`
 for `is_fee_token_allowed` on the same Soroban contract. Per-token maximums
-remain intentionally unset here and are tracked by RELAYER-04.
+are enforced separately by RELAYER-04.
+
+RELAYER-04 evidence: the active ignored testnet configuration and tracked
+deployment template set testnet USDC `max_allowed_fee` to `10,000,000` base
+units, exactly `1.0000000 USDC` at the token's verified seven-decimal
+precision. This is a hard ceiling on the user's signed `max_fee_amount`, not a
+fixed charge. For the OZ policy, it supersedes the stale `50,000` (`0.005
+USDC`) prototype example, which is below the conservative worst-case
+routed-creation fee profile at the 2026-09-04 reference price of
+`$0.1798/XLM`. At that reference price, the `1 USDC` cap provides approximately
+3x headroom over the profile's `1.790825 XLM` estimate; it must be revisited if
+live fee telemetry or XLM/USDC pricing approaches the ceiling. The
+configuration check verifies that `10,000,000` is accepted and `10,000,001` is
+rejected; OpenZeppelin Relayer `v1.6.0` applies the same inclusive `fee <=
+max_allowed_fee` boundary before fee conversion and submission.
 
 ### Backend API
 
