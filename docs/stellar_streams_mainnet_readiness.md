@@ -214,7 +214,7 @@ intent model.
 ### OpenZeppelin Relayer
 
 - [x] **RELAYER-01:** Pin the production OZ Relayer version.
-- [ ] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
+- [x] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
 - [ ] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
 - [ ] **RELAYER-04:** Configure strict per-token maximum fees.
 - [ ] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
@@ -228,6 +228,12 @@ and immutable multi-architecture OCI digest
 `sha256:89d7b3df96949322dacb6df25732d4d747b9612b562ba87324997c2ae2c937ae`.
 The production Compose override removes the mutable local build and requires
 the digest-pinned registry artifact.
+
+RELAYER-02 evidence: the active ignored testnet configuration and the tracked
+deployment template set the `fundable-stellar-relayer` policy to
+`fee_payment_strategy: "user"`. Validation confirms the entry is a Stellar
+testnet relayer and uses the native user-fee gas-abstraction strategy supported
+by OpenZeppelin Relayer `v1.6.0`.
 
 ### Backend API
 

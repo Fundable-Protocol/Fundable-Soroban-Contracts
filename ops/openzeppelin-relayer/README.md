@@ -41,3 +41,25 @@ docker compose \
 ```
 
 The output must exactly match the pinned image reference above.
+
+## Testnet fee strategy
+
+The tracked testnet configuration template is
+`config.testnet.example.json`. Its Stellar relayer policy sets
+`fee_payment_strategy` to `user`, which is required by the native OpenZeppelin
+gas-abstraction flow. Deploy the template as `config/config.json` and keep the
+referenced signer keystore and passphrase outside this repository.
+
+Validate the non-secret policy fields before starting the service:
+
+```bash
+node -e '
+  const config = require("./ops/openzeppelin-relayer/config.testnet.example.json");
+  const relayer = config.relayers.find((entry) => entry.id === "fundable-stellar-relayer");
+  if (relayer?.network !== "testnet") throw new Error("expected testnet");
+  if (relayer?.network_type !== "stellar") throw new Error("expected Stellar");
+  if (relayer?.policies?.fee_payment_strategy !== "user") {
+    throw new Error("expected user fee strategy");
+  }
+'
+```
