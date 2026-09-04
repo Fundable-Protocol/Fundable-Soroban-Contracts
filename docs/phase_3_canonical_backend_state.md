@@ -1,6 +1,6 @@
 # Phase 3 Canonical Backend State Specification
 
-Status: Implemented; production migration pending
+Status: Complete
 Version: 1.0  
 Last updated: 2026-09-04
 
@@ -360,5 +360,7 @@ dead-letter state/queue without being mislabeled as chain failure.
 Verification on 2026-09-04: the two focused payment-stream suites passed 13/13
 tests, `pnpm build` passed, scoped ESLint passed without findings, and
 `drizzle-kit generate` reported no schema changes. Migrations `0026` through
-`0030` are intentionally not applied to the live database until the
-coordinated production rollout.
+`0030` were applied to the live database on 2026-09-04. The post-migration
+verification confirmed migration ledger entries `31` through `35`, all three
+intent/submission/transition tables, the canonical projection columns, and the
+six critical uniqueness indexes.

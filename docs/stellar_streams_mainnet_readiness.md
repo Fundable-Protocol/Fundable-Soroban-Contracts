@@ -173,9 +173,7 @@ Status: In progress. Current implementation evidence is recorded in
 This phase can run in parallel with Phase 2, but cannot finish until the
 contract state model and event schemas are frozen.
 
-Status: Implementation complete. Production activation remains pending the
-planned live-database migration rollout. The implementation target and
-evidence are recorded in
+Status: Complete. The implementation target and evidence are recorded in
 [Phase 3 Canonical Backend State Specification](phase_3_canonical_backend_state.md).
 
 - [x] **DATA-01:** Define the database transaction state machine.
@@ -203,8 +201,8 @@ chain-authoritative projection updates, and browser-write boundaries. A
 relayer confirmation remains `pending`; `confirmed` is written only in the
 same transaction that persists finalized chain projection/event data. Focused
 tests pass (13/13), the backend build and scoped lint pass, and Drizzle reports
-no schema changes after migrations `0029` and `0030`. Live migrations remain
-deferred until the coordinated production rollout.
+no schema changes after migrations `0029` and `0030`. Migrations `0026`
+through `0030` were applied to the live database and verified on 2026-09-04.
 
 ---
 
