@@ -213,7 +213,7 @@ intent model.
 
 ### OpenZeppelin Relayer
 
-- [ ] **RELAYER-01:** Pin the production OZ Relayer version.
+- [x] **RELAYER-01:** Pin the production OZ Relayer version.
 - [ ] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
 - [ ] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
 - [ ] **RELAYER-04:** Configure strict per-token maximum fees.
@@ -221,6 +221,13 @@ intent model.
 - [ ] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
 - [ ] **RELAYER-07:** Verify FeeForwarder source, ABI, deployment, and WASM hash.
 - [ ] **RELAYER-08:** Keep OZ credentials accessible only to backend services.
+
+RELAYER-01 evidence: production is pinned to the official OpenZeppelin Relayer
+`v1.6.0` release (source commit `554f15adb4a20b180a367154d7d383351bb75b5a`)
+and immutable multi-architecture OCI digest
+`sha256:89d7b3df96949322dacb6df25732d4d747b9612b562ba87324997c2ae2c937ae`.
+The production Compose override removes the mutable local build and requires
+the digest-pinned registry artifact.
 
 ### Backend API
 
