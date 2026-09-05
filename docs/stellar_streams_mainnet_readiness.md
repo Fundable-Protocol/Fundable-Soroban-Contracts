@@ -305,7 +305,7 @@ public signing address.
 ### Backend API
 
 - [x] **SPONSOR-01:** Implement a typed `quote` endpoint.
-- [ ] **SPONSOR-02:** Implement a typed `build` endpoint.
+- [x] **SPONSOR-02:** Implement a typed `build` endpoint.
 - [ ] **SPONSOR-03:** Implement a typed `submit` endpoint accepting the built
   transaction XDR and the user's signed authorization entry.
 - [ ] **SPONSOR-04:** Implement typed intents for create, withdraw, cancel, and later Flow mutations.
@@ -321,6 +321,17 @@ typed fee response. It fails closed when the relayer or network fee token is
 not configured and rejects unsuccessful or malformed relayer responses. The
 focused payment-stream tests pass (18/18), scoped lint and diff checks pass, and
 the backend TypeScript build succeeds.
+
+SPONSOR-02 evidence: `backend-main` commit `f1add69` adds the authenticated
+`POST /api/payment-streams/sponsor/build` endpoint. Its validated request type
+accepts the unsigned Soroban transaction XDR and network, while the backend
+selects the configured fee token and calls OpenZeppelin Relayer's sponsored
+build API. The stable response exposes the built transaction XDR, Soroban user
+authorization entry, fee amounts, and authorization validity bound. The
+backend rejects missing authorization entries, missing Soroban maximum fees,
+fee-token mismatches, malformed/unsuccessful responses, unconfigured networks,
+and relayer failures. The focused payment-stream tests pass (23/23), scoped
+lint and diff checks pass, and the backend TypeScript build succeeds.
 
 ### Mandatory Intent Validation
 
@@ -620,6 +631,7 @@ audit reports, transaction hashes, deployment manifests, or runbook exercises.
 | RELAYER-07 | Source/build/deployment manifest and on-chain byte comparison | `c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa` | Fundable | 2026-09-05 | RPC-fetched WASM exactly matches locked source build |
 | RELAYER-08 | Production Compose boundary and credential runbook | `ops/openzeppelin-relayer/docker-compose.production.yaml` | Fundable | 2026-09-05 | Loopback default; secrets restricted to relayer/backend runtimes |
 | SPONSOR-01 | Typed backend sponsorship quote endpoint and regression tests | `backend-main` commit `3770147` | Fundable | 2026-09-05 | Backend-owned fee token; fail-closed configuration and response validation |
+| SPONSOR-02 | Typed backend sponsorship build endpoint and regression tests | `backend-main` commit `f1add69` | Fundable | 2026-09-05 | Requires Soroban auth entry and maximum fee fields; rejects fee-token mismatch |
 
 ## Release Identity
 
