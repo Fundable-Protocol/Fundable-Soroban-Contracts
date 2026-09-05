@@ -65,6 +65,15 @@ worst-case routed-creation estimate using the 2026-09-04 reference price of
 `$0.1798/XLM`. Review it against live fee and XLM/USDC telemetry before mainnet
 rollout and whenever either nears the ceiling.
 
+The platform XLM policy sets `max_fee` to `30,000,000` stroops (`3 XLM`) and
+`fee_margin_percentage` to `10.0`. OpenZeppelin Relayer applies the margin to
+the simulated XLM fee before enforcing `max_fee` and converting the charge to
+USDC. The conservative `17,908,250`-stroop routed-creation profile becomes
+`19,699,075` stroops after the margin, leaving approximately 52% ceiling
+headroom for FeeForwarder overhead and network variance. A request is rejected
+if its margin-adjusted fee exceeds `3 XLM`; live RPC simulation remains
+authoritative.
+
 Validate the non-secret policy fields before starting the service:
 
 ```bash
@@ -75,6 +84,21 @@ node -e '
   if (relayer?.network_type !== "stellar") throw new Error("expected Stellar");
   if (relayer?.policies?.fee_payment_strategy !== "user") {
     throw new Error("expected user fee strategy");
+  }
+  const xlmCap = relayer.policies.max_fee;
+  const feeMargin = relayer.policies.fee_margin_percentage;
+  if (xlmCap !== 30_000_000) throw new Error("unexpected XLM fee cap");
+  if (feeMargin !== 10.0) throw new Error("unexpected fee margin");
+  const marginAdjusted = (fee) => Math.trunc(fee * (1 + feeMargin / 100));
+  if (marginAdjusted(17_908_250) !== 19_699_075) {
+    throw new Error("unexpected profiled fee after margin");
+  }
+  if (marginAdjusted(17_908_250) > xlmCap) {
+    throw new Error("profiled fee exceeds XLM cap");
+  }
+  const acceptsXlmFee = (fee) => fee > 0 && fee <= xlmCap;
+  if (!acceptsXlmFee(xlmCap) || acceptsXlmFee(xlmCap + 1)) {
+    throw new Error("XLM fee cap boundary check failed");
   }
   const assets = relayer?.policies?.allowed_tokens?.map(({ asset }) => asset);
   const expected = ["CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"];

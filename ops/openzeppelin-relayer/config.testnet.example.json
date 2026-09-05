@@ -9,6 +9,8 @@
       "network_type": "stellar",
       "policies": {
         "fee_payment_strategy": "user",
+        "max_fee": 30000000,
+        "fee_margin_percentage": 10.0,
         "allowed_tokens": [
           {
             "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",

@@ -217,7 +217,7 @@ intent model.
 - [x] **RELAYER-02:** Configure testnet with `fee_payment_strategy: "user"`.
 - [x] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
 - [x] **RELAYER-04:** Configure strict per-token maximum fees.
-- [ ] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
+- [x] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
 - [ ] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
 - [ ] **RELAYER-07:** Verify FeeForwarder source, ABI, deployment, and WASM hash.
 - [ ] **RELAYER-08:** Keep OZ credentials accessible only to backend services.
@@ -259,6 +259,17 @@ live fee telemetry or XLM/USDC pricing approaches the ceiling. The
 configuration check verifies that `10,000,000` is accepted and `10,000,001` is
 rejected; OpenZeppelin Relayer `v1.6.0` applies the same inclusive `fee <=
 max_allowed_fee` boundary before fee conversion and submission.
+
+RELAYER-05 evidence: the active ignored testnet configuration and tracked
+deployment template set the platform `max_fee` to `30,000,000` stroops (`3
+XLM`) and `fee_margin_percentage` to `10.0`. OpenZeppelin Relayer `v1.6.0`
+applies that margin to the simulated XLM fee before enforcing `max_fee` and
+converting the charge to USDC. The conservative `17,908,250`-stroop
+routed-creation profile becomes `19,699,075` stroops after margin and remains
+below the cap with approximately 52% headroom. Configuration checks verify the
+profile calculation and the inclusive ceiling: `30,000,000` is accepted and
+`30,000,001` is rejected. Live RPC simulation remains authoritative, and the
+cap must be revisited if production telemetry approaches it.
 
 ### Backend API
 
