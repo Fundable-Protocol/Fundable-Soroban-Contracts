@@ -1,0 +1,5 @@
+services:
+  relayer:
+    environment:
+      # Verified deployment recorded in fee-forwarder.testnet.json.
+      STELLAR_TESTNET_FEE_FORWARDER_ADDRESS: CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D

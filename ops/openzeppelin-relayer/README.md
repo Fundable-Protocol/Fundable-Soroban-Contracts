@@ -14,16 +14,19 @@ Use this file as the production override for the upstream Compose definition:
 docker compose \
   -f /path/to/openzeppelin-relayer/docker-compose.yaml \
   -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.production.yaml \
+  -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.testnet.yaml \
   config
 
 docker compose \
   -f /path/to/openzeppelin-relayer/docker-compose.yaml \
   -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.production.yaml \
+  -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.testnet.yaml \
   pull relayer
 
 docker compose \
   -f /path/to/openzeppelin-relayer/docker-compose.yaml \
   -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.production.yaml \
+  -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.testnet.yaml \
   up -d --no-build relayer redis
 ```
 
@@ -37,10 +40,81 @@ To verify the resolved image without printing secrets:
 docker compose \
   -f /path/to/openzeppelin-relayer/docker-compose.yaml \
   -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.production.yaml \
+  -f /path/to/fundable-soroban-contracts/ops/openzeppelin-relayer/docker-compose.testnet.yaml \
   config --images
 ```
 
 The output must exactly match the pinned image reference above.
+
+## FeeForwarder identity
+
+OZ Relayer does not provide a usable implicit FeeForwarder address for every
+Stellar network. Always include exactly one network overlay. The testnet
+overlay pins the verified deployment directly; the mainnet overlay refuses to
+start Compose interpolation unless `STELLAR_MAINNET_FEE_FORWARDER_ADDRESS` is
+set. DEPLOY-05 remains responsible for supplying the verified mainnet address.
+
+The testnet FeeForwarder is the permissionless example from OpenZeppelin
+Stellar Contracts `v0.7.1`, commit
+`3f81125bed3114cc93f5fca6d13240082050269a`. It is deployed at
+`CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D`, from contract
+creation transaction
+`baf15fc4fe87ae5dc12e1389baf404505d8428ccf67d3496c6bcb471b9bc50d2`.
+The locally built and RPC-fetched WASM are byte-for-byte identical with SHA-256
+`c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa`.
+The complete source, ABI, build, transaction, and verification record is in
+`fee-forwarder.testnet.json`.
+
+Reproduce the build with Stellar CLI `27.0.0` and Rust `1.92.0`, then compare
+it with the deployed code:
+
+```bash
+git clone https://github.com/OpenZeppelin/stellar-contracts.git
+cd stellar-contracts
+git checkout 3f81125bed3114cc93f5fca6d13240082050269a
+stellar contract build \
+  --package fee-forwarder-permissionless-example \
+  --locked \
+  --out-dir ./fee-forwarder-build
+stellar contract fetch \
+  --id CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D \
+  --network testnet \
+  --out-file ./deployed-fee-forwarder.wasm
+shasum -a 256 \
+  ./fee-forwarder-build/fee_forwarder_permissionless_example.wasm \
+  ./deployed-fee-forwarder.wasm
+cmp ./fee-forwarder-build/fee_forwarder_permissionless_example.wasm \
+  ./deployed-fee-forwarder.wasm
+```
+
+Inspect the fetched artifact and confirm that `forward` takes, in order:
+`fee_token`, `fee_amount`, `max_fee_amount`, `expiration_ledger`,
+`target_contract`, `target_fn`, `target_args`, `user`, and `relayer`. This is the
+ABI hard-coded by OZ Relayer `v1.6.0`. The older Fundable Paymaster is not a
+compatible substitute because its argument order differs.
+
+For mainnet, use `docker-compose.mainnet.yaml` in place of the testnet overlay.
+Never copy a testnet address into the mainnet variable.
+
+## Backend-only credential boundary
+
+The production override binds the relayer API to `127.0.0.1` by default and
+disables Swagger and metrics. If the backend runs on another host, set
+`RELAYER_BIND_ADDRESS` only to a private service address and enforce a network
+policy or firewall that allows the backend service identity alone. Do not bind
+the relayer to `0.0.0.0` or expose it through the public frontend ingress.
+
+Store `API_KEY`, `KEYSTORE_PASSPHRASE`, and `WEBHOOK_SIGNING_KEY` in the
+deployment secret manager. Supply `OZ_RELAYER_API_KEY` only to the backend
+runtime. Never place these values in tracked configuration, browser storage,
+frontend environment variables, `NEXT_PUBLIC_*`/`VITE_*` variables, logs, or
+client responses. The public relayer signing address is not a credential and
+may be exposed for transaction validation.
+
+Before a release, verify the rendered Compose configuration in a controlled
+shell, check that its published address is loopback/private, and scan tracked
+backend and frontend files for credential variable misuse. Do not paste the
+rendered environment or secret values into CI output.
 
 ## Testnet fee strategy and token allowlist
 

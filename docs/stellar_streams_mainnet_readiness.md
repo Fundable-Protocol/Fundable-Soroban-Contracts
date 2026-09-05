@@ -218,9 +218,9 @@ intent model.
 - [x] **RELAYER-03:** Configure allowed Soroban USDC contract addresses.
 - [x] **RELAYER-04:** Configure strict per-token maximum fees.
 - [x] **RELAYER-05:** Configure platform XLM fee limits and fee margin.
-- [ ] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
-- [ ] **RELAYER-07:** Verify FeeForwarder source, ABI, deployment, and WASM hash.
-- [ ] **RELAYER-08:** Keep OZ credentials accessible only to backend services.
+- [x] **RELAYER-06:** Configure the FeeForwarder address explicitly for every network.
+- [x] **RELAYER-07:** Verify FeeForwarder source, ABI, deployment, and WASM hash.
+- [x] **RELAYER-08:** Keep OZ credentials accessible only to backend services.
 
 RELAYER-01 evidence: production is pinned to the official OpenZeppelin Relayer
 `v1.6.0` release (source commit `554f15adb4a20b180a367154d7d383351bb75b5a`)
@@ -270,6 +270,37 @@ below the cap with approximately 52% headroom. Configuration checks verify the
 profile calculation and the inclusive ceiling: `30,000,000` is accepted and
 `30,000,001` is rejected. Live RPC simulation remains authoritative, and the
 cap must be revisited if production telemetry approaches it.
+
+RELAYER-06 evidence: the testnet Compose overlay explicitly sets
+`STELLAR_TESTNET_FEE_FORWARDER_ADDRESS` to the verified contract
+`CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D`. The separate
+mainnet overlay has no default and fails Compose interpolation unless
+`STELLAR_MAINNET_FEE_FORWARDER_ADDRESS` is supplied. This removes reliance on
+OZ defaults while leaving selection of the verified mainnet deployment to
+DEPLOY-05.
+
+RELAYER-07 evidence: the testnet contract was built with a locked dependency
+graph from the official OpenZeppelin Stellar Contracts `v0.7.1` tag, commit
+`3f81125bed3114cc93f5fca6d13240082050269a`, using the permissionless
+FeeForwarder example. Its `forward` ABI matches the argument order hard-coded
+by OZ Relayer `v1.6.0`. The contract was created in transaction
+`baf15fc4fe87ae5dc12e1389baf404505d8428ccf67d3496c6bcb471b9bc50d2`.
+Fetching the deployed WASM from testnet RPC produced a byte-for-byte match to
+the local build: both have SHA-256
+`c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa`.
+The tracked deployment manifest records the full source, ABI, artifact, and
+transaction identity. The legacy Fundable Paymaster was rejected for this use
+because its `forward` argument order is incompatible with OZ Relayer.
+
+RELAYER-08 evidence: the production Compose override publishes the relayer API
+on loopback by default, disables Swagger and metrics, and permits a non-loopback
+bind only through the explicit `RELAYER_BIND_ADDRESS` deployment setting. The
+runbook requires a private service address plus backend-only network policy,
+keeps relayer and signer secrets in the deployment secret manager, and forbids
+placing them in frontend/public environment variables, browser storage, logs,
+or client responses. Repository inspection found `OZ_RELAYER_API_KEY` consumed
+only by the backend relayer service; the frontend contains only the non-secret
+public signing address.
 
 ### Backend API
 
@@ -575,6 +606,9 @@ audit reports, transaction hashes, deployment manifests, or runbook exercises.
 | Checklist ID | Evidence | Revision / Hash | Owner | Date | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Example: VERIFY-02 | CI run URL | commit SHA | Team/person | YYYY-MM-DD | All contract tests passed |
+| RELAYER-06 | Network-specific Compose overlays | `fee-forwarder.testnet.json` | Fundable | 2026-09-05 | Testnet pinned; mainnet fails closed until DEPLOY-05 supplies its verified address |
+| RELAYER-07 | Source/build/deployment manifest and on-chain byte comparison | `c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa` | Fundable | 2026-09-05 | RPC-fetched WASM exactly matches locked source build |
+| RELAYER-08 | Production Compose boundary and credential runbook | `ops/openzeppelin-relayer/docker-compose.production.yaml` | Fundable | 2026-09-05 | Loopback default; secrets restricted to relayer/backend runtimes |
 
 ## Release Identity
 
@@ -586,7 +620,7 @@ Complete this section for every release candidate.
 | Stellar frontend | TBD | Build/deployment ID TBD |
 | Backend | TBD | Build/deployment ID TBD |
 | OpenZeppelin Relayer | TBD | Version, image digest, and config hash TBD |
-| FeeForwarder | TBD | Contract ID and WASM hash TBD |
+| FeeForwarder | OpenZeppelin Stellar Contracts `v0.7.1` / `3f81125bed3114cc93f5fca6d13240082050269a` | Testnet `CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D`; SHA-256 `c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa` |
 
 ## Future-Task Handoff
 
