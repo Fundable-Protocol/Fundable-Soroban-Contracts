@@ -351,7 +351,7 @@ and diff checks pass; and the backend TypeScript build succeeds.
 
 ### Mandatory Intent Validation
 
-- [ ] **VALIDATE-01:** Require the expected network.
+- [x] **VALIDATE-01:** Require the expected network.
 - [ ] **VALIDATE-02:** Require the configured relayer source address.
 - [ ] **VALIDATE-03:** Require the configured FeeForwarder contract.
 - [ ] **VALIDATE-04:** Require the configured Soroban USDC fee token.
@@ -366,6 +366,16 @@ and diff checks pass; and the backend TypeScript build succeeds.
 - [ ] **VALIDATE-12:** Reject expired authorization.
 - [ ] **VALIDATE-13:** Reject replayed/idempotently completed requests.
 - [ ] **VALIDATE-14:** Reject unexpected sub-invocations or authorization trees.
+
+VALIDATE-01 evidence: `backend-main` commit `b228d02` introduces the
+backend-owned `STELLAR_SPONSORSHIP_NETWORK` deployment setting. Production
+startup fails when it is absent or invalid; non-production environments default
+to `TESTNET`. Quote, build, and submit all reject a request whose network differs
+from that setting before invoking OpenZeppelin Relayer, using the stable
+`SPONSORSHIP_NETWORK_MISMATCH` domain error. Focused payment-stream tests pass
+(34/34), including a no-relayer-call mismatch case for every sponsorship stage;
+scoped formatting, lint, and diff checks pass; and the backend TypeScript build
+succeeds.
 
 ### Authentication and Abuse Controls
 
