@@ -306,11 +306,11 @@ public signing address.
 
 - [x] **SPONSOR-01:** Implement a typed `quote` endpoint.
 - [x] **SPONSOR-02:** Implement a typed `build` endpoint.
-- [ ] **SPONSOR-03:** Implement a typed `submit` endpoint accepting the built
+- [x] **SPONSOR-03:** Implement a typed `submit` endpoint accepting the built
   transaction XDR and the user's signed authorization entry.
-- [ ] **SPONSOR-04:** Implement typed intents for create, withdraw, cancel, and later Flow mutations.
-- [ ] **SPONSOR-05:** Stop accepting browser-assembled final Paymaster transactions.
-- [ ] **SPONSOR-06:** Disable the publicly reachable generic unsigned-XDR relay path.
+- [x] **SPONSOR-04:** Implement typed intents for create, withdraw, cancel, and later Flow mutations.
+- [x] **SPONSOR-05:** Stop accepting browser-assembled final Paymaster transactions.
+- [x] **SPONSOR-06:** Disable the publicly reachable generic unsigned-XDR relay path.
 
 SPONSOR-01 evidence: `backend-main` commit `3770147` adds the authenticated
 `POST /api/payment-streams/sponsor/quote` endpoint with a validated request DTO
@@ -332,6 +332,22 @@ backend rejects missing authorization entries, missing Soroban maximum fees,
 fee-token mismatches, malformed/unsuccessful responses, unconfigured networks,
 and relayer failures. The focused payment-stream tests pass (23/23), scoped
 lint and diff checks pass, and the backend TypeScript build succeeds.
+
+SPONSOR-03 through SPONSOR-06 evidence: `backend-main` commits `5e7ad90` and
+`e640c29` replace both legacy relay endpoints with the authenticated
+`POST /api/payment-streams/sponsor/submit` endpoint. Its validated request
+requires the relayer-built transaction XDR, the wallet-signed Soroban
+authorization entry, the network, the authorization validity bound, and a
+discriminated typed intent. The intent union covers Lockup and Flow creation,
+withdraw/withdraw-max, Lockup cancellation, and Flow deposit, pause, restart,
+rate adjustment, refund/refund-max, and void operations. Submission binds the
+intent actor to the authenticated wallet, persists the intent and authorization
+expiry before calling the relayer, and forwards `signed_auth_entry` through the
+pinned OpenZeppelin Stellar submit API. The browser-assembled `relayed` route,
+the generic `relayed/transaction` route, their DTOs, and obsolete Paymaster-era
+submission helpers are removed. Focused payment-stream tests pass (31/31),
+including rejection of generic and incomplete intents; scoped lint, formatting,
+and diff checks pass; and the backend TypeScript build succeeds.
 
 ### Mandatory Intent Validation
 
