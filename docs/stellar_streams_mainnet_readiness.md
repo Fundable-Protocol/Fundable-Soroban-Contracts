@@ -406,12 +406,34 @@ schema changes after migration `0031`.
 
 ### Authentication and Abuse Controls
 
-- [ ] **AUTH-01:** Replace address-header-only authentication with signed wallet challenges.
+- [x] **AUTH-01:** Replace address-header-only authentication with signed wallet challenges.
 - [ ] **AUTH-02:** Use short-lived sessions bound to address, chain, and network.
 - [ ] **AUTH-03:** Bind each signed intent to the authenticated wallet and session.
 - [ ] **AUTH-04:** Add per-wallet and per-IP rate limits.
 - [ ] **AUTH-05:** Add per-transaction and daily sponsorship budgets.
 - [ ] **AUTH-06:** Add idempotency keys to all state-changing endpoints.
+
+AUTH-01 evidence: `backend-main` commit `584d433` adds public challenge and
+verification endpoints implementing the final
+[SEP-53 signed-message format](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md).
+The backend issues a random, human-readable five-minute challenge containing
+the Stellar address, network, nonce, issue time, expiry, and challenge ID;
+atomically consumes it on verification; verifies the base64 Ed25519 signature
+over the SEP-53-prefixed SHA-256 digest; and only then creates or resolves the
+wallet record. Successful verification returns a random 15-minute bearer token
+whose SHA-256 hash, rather than the token, identifies the server-side Redis
+session.
+
+Quote, build, and submit now use a dedicated signed-session guard. That guard
+populates the authenticated wallet exclusively from the server-side session and
+does not inspect or fall back to `x-wallet-id`; the legacy header is retained
+only for unrelated routes pending their own migration. Security regression
+tests prove that a valid SEP-53 signature succeeds, challenges are single-use,
+invalid attempts consume the challenge, expired/malformed sessions fail, raw
+tokens are not used as Redis keys, and an address header alone cannot enter any
+sponsorship route. The focused auth/sponsorship suites pass (54/54), scoped
+lint, formatting, and diff checks pass, and the backend TypeScript build
+succeeds.
 
 ### Exit Gate
 
