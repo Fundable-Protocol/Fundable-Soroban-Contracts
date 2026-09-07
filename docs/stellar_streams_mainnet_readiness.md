@@ -407,11 +407,11 @@ schema changes after migration `0031`.
 ### Authentication and Abuse Controls
 
 - [x] **AUTH-01:** Replace address-header-only authentication with signed wallet challenges.
-- [ ] **AUTH-02:** Use short-lived sessions bound to address, chain, and network.
-- [ ] **AUTH-03:** Bind each signed intent to the authenticated wallet and session.
-- [ ] **AUTH-04:** Add per-wallet and per-IP rate limits.
-- [ ] **AUTH-05:** Add per-transaction and daily sponsorship budgets.
-- [ ] **AUTH-06:** Add idempotency keys to all state-changing endpoints.
+- [x] **AUTH-02:** Use short-lived sessions bound to address, chain, and network.
+- [x] **AUTH-03:** Bind each signed intent to the authenticated wallet and session.
+- [x] **AUTH-04:** Add per-wallet and per-IP rate limits.
+- [x] **AUTH-05:** Add per-transaction and daily sponsorship budgets.
+- [x] **AUTH-06:** Add idempotency keys to all state-changing endpoints.
 
 AUTH-01 evidence: `backend-main` commit `584d433` adds public challenge and
 verification endpoints implementing the final
@@ -435,9 +435,41 @@ sponsorship route. The focused auth/sponsorship suites pass (54/54), scoped
 lint, formatting, and diff checks pass, and the backend TypeScript build
 succeeds.
 
+AUTH-02 through AUTH-06 evidence: `backend-main` commit `50fe08f` binds every
+15-minute server-side session to a random session ID, canonical Stellar
+address, `stellar` chain, selected network, and browser fingerprint. The signed
+challenge carries the same address/chain/network context; verification must
+come from the originating fingerprint, and the sponsorship guard rejects a
+request whose chain or network differs from its session.
+
+Build artifacts are stored in Redis against the issuing session, wallet,
+network, transaction XDR, and build expiry. Submit requires that exact binding,
+then independently validates the signed intent actor and Soroban authorization
+before reserving budget or sending to the relayer. Distributed Redis limits are
+applied to both authenticated wallet and proxy-aware client IP for quote
+(`30/60` requests per minute), build (`15/30`), and submit (`5/15`), where each
+pair is wallet/IP. Challenge and verification endpoints additionally enforce IP
+limits of 10 and 20 requests per five minutes. Production must explicitly set
+the trusted-proxy hop count so forwarded addresses are interpreted by Express
+rather than accepted directly from spoofable headers; abuse-control storage
+failures fail closed.
+
+The existing per-transaction fee-token ceiling is now combined with atomic,
+UTC-day Redis reservations for configurable per-wallet and platform daily
+ceilings. A reservation is keyed by network, wallet, and Soroban authorization
+nonce, so retries do not consume the budget twice. Within the sponsorship API,
+quote and build do not change chain state; submit is the sole state-changing
+endpoint and requires an idempotency key whose hash is durably bound to the
+intent and submission records. Reusing an authorization nonce with a different
+idempotency key is rejected. Nine focused auth/sponsorship suites pass (73/73),
+including session-context mismatch, spoofed forwarding headers, build-binding,
+rate-limit, atomic-budget, nonce-replay, and missing-idempotency cases. Scoped
+lint, formatting, and diff checks pass, and the backend TypeScript build
+succeeds.
+
 ### Exit Gate
 
-- [ ] A browser cannot cause the relayer to sign anything except an authenticated,
+- [x] A browser cannot cause the relayer to sign anything except an authenticated,
   policy-approved Fundable operation.
 - [ ] The OZ native quote/build/sign/submit path passes testnet integration tests.
 
