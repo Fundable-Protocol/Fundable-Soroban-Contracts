@@ -352,20 +352,20 @@ and diff checks pass; and the backend TypeScript build succeeds.
 ### Mandatory Intent Validation
 
 - [x] **VALIDATE-01:** Require the expected network.
-- [ ] **VALIDATE-02:** Require the configured relayer source address.
-- [ ] **VALIDATE-03:** Require the configured FeeForwarder contract.
-- [ ] **VALIDATE-04:** Require the configured Soroban USDC fee token.
-- [ ] **VALIDATE-05:** Require the configured relayer as fee recipient.
-- [ ] **VALIDATE-06:** Enforce positive fee and platform/user maximums.
-- [ ] **VALIDATE-07:** Require exactly one Soroban operation.
-- [ ] **VALIDATE-08:** Allowlist target contract addresses.
-- [ ] **VALIDATE-09:** Allowlist functions per target contract.
-- [ ] **VALIDATE-10:** Verify sender/caller equals the authenticated wallet where required.
-- [ ] **VALIDATE-11:** Verify recipient, amount, duration, stream ID, and function
+- [x] **VALIDATE-02:** Require the configured relayer source address.
+- [x] **VALIDATE-03:** Require the configured FeeForwarder contract.
+- [x] **VALIDATE-04:** Require the configured Soroban USDC fee token.
+- [x] **VALIDATE-05:** Require the configured relayer as fee recipient.
+- [x] **VALIDATE-06:** Enforce positive fee and platform/user maximums.
+- [x] **VALIDATE-07:** Require exactly one Soroban operation.
+- [x] **VALIDATE-08:** Allowlist target contract addresses.
+- [x] **VALIDATE-09:** Allowlist functions per target contract.
+- [x] **VALIDATE-10:** Verify sender/caller equals the authenticated wallet where required.
+- [x] **VALIDATE-11:** Verify recipient, amount, duration, stream ID, and function
   arguments match the typed intent.
-- [ ] **VALIDATE-12:** Reject expired authorization.
-- [ ] **VALIDATE-13:** Reject replayed/idempotently completed requests.
-- [ ] **VALIDATE-14:** Reject unexpected sub-invocations or authorization trees.
+- [x] **VALIDATE-12:** Reject expired authorization.
+- [x] **VALIDATE-13:** Reject replayed/idempotently completed requests.
+- [x] **VALIDATE-14:** Reject unexpected sub-invocations or authorization trees.
 
 VALIDATE-01 evidence: `backend-main` commit `b228d02` introduces the
 backend-owned `STELLAR_SPONSORSHIP_NETWORK` deployment setting. Production
@@ -376,6 +376,33 @@ from that setting before invoking OpenZeppelin Relayer, using the stable
 (34/34), including a no-relayer-call mismatch case for every sponsorship stage;
 scoped formatting, lint, and diff checks pass; and the backend TypeScript build
 succeeds.
+
+VALIDATE-02 through VALIDATE-14 evidence: `backend-main` commit `0c9d2fe`
+adds a fail-closed submit-boundary policy decoder for the exact FeeForwarder
+shape pinned by RELAYER-07. Before the relayer is called, it parses the
+transaction and wallet-signed Soroban authorization XDR and requires the
+configured relayer source, FeeForwarder, network-specific USDC token, fee
+recipient, and positive fee bounded by both the wallet-signed maximum and the
+backend maximum. It permits one unsigned `InvokeHostFunction` operation only;
+maps every typed Lockup/Flow intent to its configured Router, Lockup, or Flow
+contract and function; compares all target arguments; binds the outer user,
+authorization address, and typed sender/caller/funder to the authenticated
+wallet; and checks both wall-clock and live-ledger expiry using a dedicated
+network deployment RPC.
+
+The same policy requires the pinned eager authorization tree: a six-argument
+user `FeeForwarder.forward` root with exactly the expected token `approve` and
+target-call leaves, plus an empty-signature relayer template authorizing the
+nine-argument outer `forward` call and no sub-invocations. The signed Soroban
+nonce is persisted before relay. Migration `0031` adds a partial unique index
+over wallet, network, and authorization nonce, so concurrent reuse with a new
+idempotency key fails; a confirmed request also cannot be resubmitted. The full
+focused payment-stream/relayer suite passes (48/48), including genuine XDR
+mutation cases for source, forwarder, token, recipient, fee bounds, operation
+count, target, function, actor, arguments, expiry, template signatures,
+authorization-tree expansion, and nonce replay. Scoped lint, formatting, and
+diff checks pass, the backend TypeScript build succeeds, and Drizzle reports no
+schema changes after migration `0031`.
 
 ### Authentication and Abuse Controls
 
