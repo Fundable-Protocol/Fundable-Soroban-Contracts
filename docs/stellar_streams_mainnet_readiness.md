@@ -503,27 +503,30 @@ approval is a separate user transaction, and Flow remains outside this gate.
 
 ## Phase 5: Build Indexing and Reconciliation
 
+Status: Ready for review. Backend implementation and validation evidence are
+recorded in [Phase 5 Indexing and Reconciliation](phase_5_indexing_and_reconciliation.md).
+
 Phase 5 depends on frozen contract events and the canonical backend state model.
 It can run in parallel with Phase 4.
 
-- [ ] **INDEX-01:** Index Router events.
-- [ ] **INDEX-02:** Index Flow events.
-- [ ] **INDEX-03:** Index Lockup events.
-- [ ] **INDEX-04:** Index Stream NFT events.
-- [ ] **INDEX-05:** Index relevant FeeForwarder events.
-- [ ] **INDEX-06:** Persist the last successfully processed ledger.
-- [ ] **INDEX-07:** Make ingestion idempotent by event identity.
-- [ ] **INDEX-08:** Map NFT token IDs to core stream IDs.
-- [ ] **INDEX-09:** Update canonical ownership after NFT transfers.
-- [ ] **INDEX-10:** Derive canonical lifecycle state from chain state and events.
-- [ ] **INDEX-11:** Handle ledger gaps and replay.
-- [ ] **INDEX-12:** Add RPC failover.
-- [ ] **INDEX-13:** Add periodic reconciliation of active streams.
-- [ ] **INDEX-14:** Alert when database and on-chain state disagree.
-- [ ] **INDEX-15:** Implement `GET /payment-streams/:streamId` with structured data.
-- [ ] **INDEX-16:** Implement persistent stream activity retrieval.
-- [ ] **INDEX-17:** Recover pending submissions after service restart.
-- [ ] **INDEX-18:** Derive dashboard statistics from reconciled state.
+- [x] **INDEX-01:** Index Router events.
+- [x] **INDEX-02:** Index Flow events.
+- [x] **INDEX-03:** Index Lockup events.
+- [x] **INDEX-04:** Index Stream NFT events.
+- [x] **INDEX-05:** Index relevant FeeForwarder events.
+- [x] **INDEX-06:** Persist the last successfully processed ledger.
+- [x] **INDEX-07:** Make ingestion idempotent by event identity.
+- [x] **INDEX-08:** Map NFT token IDs to core stream IDs.
+- [x] **INDEX-09:** Update canonical ownership after NFT transfers.
+- [x] **INDEX-10:** Derive canonical lifecycle state from chain state and events.
+- [x] **INDEX-11:** Handle ledger gaps and replay.
+- [x] **INDEX-12:** Add RPC failover.
+- [x] **INDEX-13:** Add periodic reconciliation of active streams.
+- [x] **INDEX-14:** Alert when database and on-chain state disagree.
+- [x] **INDEX-15:** Implement `GET /payment-streams/:streamId` with structured data.
+- [x] **INDEX-16:** Implement persistent stream activity retrieval.
+- [x] **INDEX-17:** Recover pending submissions after service restart.
+- [x] **INDEX-18:** Derive dashboard statistics from reconciled state.
 
 ### Exit Gate
 
