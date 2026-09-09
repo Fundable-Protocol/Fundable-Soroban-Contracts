@@ -270,7 +270,7 @@ impl RouterContract {
         };
 
         // 1. Create stream on Lockup contract
-        let stream_id = lockup_client.create(&lockup_params);
+        let stream_id = lockup_client.create_from_router(&lockup_params);
 
         // 2. Generate token ID
         let token_id: i128 = env

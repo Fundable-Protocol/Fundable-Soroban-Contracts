@@ -79,6 +79,21 @@ impl LockupContract {
         events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
+    /// Configure the trusted Router once.
+    ///
+    /// The Router-only creation path consumes a sender's pre-existing token
+    /// allowance without requiring a nested user authorization. This is the
+    /// call shape required by OpenZeppelin FeeForwarder sponsorship.
+    pub fn configure_router(env: Env, router: Address) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+        if storage::has_router(&env) {
+            panic_with_error!(&env, LockupError::AlreadyInitialized);
+        }
+        storage::set_router(&env, &router);
+        storage::extend_instance_ttl(&env);
+    }
+
     // -----------------------------------------------------------------------
     // Stream Creation
     // -----------------------------------------------------------------------
@@ -98,6 +113,19 @@ impl LockupContract {
         storage::extend_instance_ttl(&env);
 
         internal::create(&env, &params)
+    }
+
+    /// Create a fully funded stream through the trusted Router using an
+    /// allowance previously granted by the sender to this Lockup contract.
+    pub fn create_from_router(env: Env, params: CreateLockupParams) -> u64 {
+        let router = storage::get_router(&env);
+        router.require_auth();
+        if params.recipient != router {
+            panic_with_error!(&env, LockupError::Unauthorized);
+        }
+        storage::extend_instance_ttl(&env);
+
+        internal::create_from_allowance(&env, &params)
     }
 
     // -----------------------------------------------------------------------

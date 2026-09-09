@@ -14,9 +14,20 @@
         "allowed_tokens": [
           {
             "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
-            "max_allowed_fee": 10000000
+            "max_allowed_fee": 10000000,
+            "swap_config": {
+              "slippage_percentage": 0.5,
+              "min_amount": 10000000,
+              "max_amount": 1000000000,
+              "retain_min_amount": 10000000
+            }
           }
         ],
+        "swap_config": {
+          "strategies": ["soroswap"],
+          "cron_schedule": "0 0 */6 * * *",
+          "min_balance_threshold": 50000000
+        },
         "timeout_seconds": 60
       }
     }

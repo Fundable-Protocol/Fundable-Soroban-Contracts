@@ -41,6 +41,17 @@ fi
 
 echo "Router Contract: $ROUTER_ID"
 
+LOCKUP_ID=$(grep -o '"lockup": *"[^"]*"' deployed_contracts.json | grep -o '"[^"]*"$' | tr -d '"')
+if [ -z "$LOCKUP_ID" ]; then
+    echo "Error: Could not find lockup ID in deployed_contracts.json"
+    exit 1
+fi
+# Explicit funding prerequisite. Choose a short future ledger expiration.
+: "${APPROVAL_EXPIRATION_LEDGER:?Set a short future ledger for the exact funding allowance}"
+stellar contract invoke --id "$TOKEN" --source "$SOURCE" --network "$NETWORK" -- approve \
+    --from "$SENDER" --spender "$LOCKUP_ID" --amount "$TOTAL_AMOUNT" \
+    --expiration_ledger "$APPROVAL_EXPIRATION_LEDGER"
+
 # Construct the JSON parameter for the CreateLockupParams struct
 PARAMS_JSON=$(cat <<EOF
 {
@@ -66,6 +77,7 @@ stellar contract invoke \
   --network "$NETWORK" \
   -- \
   create_lockup_stream \
-  --params "$PARAMS_JSON"
+  --params "$PARAMS_JSON" \
+  --transferable true
 
 echo "Stream created successfully!"

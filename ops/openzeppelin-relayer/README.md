@@ -118,6 +118,14 @@ rendered environment or secret values into CI output.
 
 ## Testnet fee strategy and token allowlist
 
+Soroban fee quotes require `swap_config.strategies: ["soroswap"]` and the
+Router, Factory, and native XLM wrapper addresses in the testnet Compose
+overlay. Addresses come from the
+[Soroswap deployment record](https://github.com/soroswap/core/blob/main/public/testnet.contracts.json).
+The six-field schedule `0 0 */6 * * *` runs conversion every six hours;
+the five-field expression in some upstream examples fails startup validation.
+Reverify the deployed contracts and USDC/XLM liquidity after a testnet reset.
+
 The tracked testnet configuration template is
 `config.testnet.example.json`. Its Stellar relayer policy sets
 `fee_payment_strategy` to `user`, which is required by the native OpenZeppelin

@@ -45,6 +45,8 @@ EOF
 echo "Saved contract IDs to deployed_contracts.json"
 
 # 3. Configure the Router after the NFT has been constructed with Router admin.
+stellar contract invoke --id "$LOCKUP_ID" --source "$SOURCE" --network "$NETWORK" -- configure_router \
+    --router "$ROUTER_ID"
 echo "Configuring router contract..."
 stellar contract invoke --id "$ROUTER_ID" --source "$SOURCE" --network "$NETWORK" -- configure \
     --flow_contract "$FLOW_ID" \

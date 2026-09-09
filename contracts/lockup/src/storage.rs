@@ -29,6 +29,28 @@ pub fn get_admin(env: &Env) -> Address {
 }
 
 // ---------------------------------------------------------------------------
+// Trusted Router
+// ---------------------------------------------------------------------------
+
+/// Store the trusted Router address in Instance storage.
+pub fn set_router(env: &Env, router: &Address) {
+    env.storage().instance().set(&DataKey::Router, router);
+}
+
+/// Read the trusted Router address. Panics if it has not been configured.
+pub fn get_router(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::Router)
+        .expect("router not configured")
+}
+
+/// Whether the trusted Router has already been configured.
+pub fn has_router(env: &Env) -> bool {
+    env.storage().instance().has(&DataKey::Router)
+}
+
+// ---------------------------------------------------------------------------
 // Next Stream ID
 // ---------------------------------------------------------------------------
 

@@ -217,6 +217,47 @@ fn auth_params(sender: &Address, recipient: &Address, token: &Address) -> Create
 }
 
 #[test]
+fn test_router_allowance_path_requires_router_and_preserves_funds_on_failure() {
+    let (env, contract_id, sender, _, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let router = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_client = TokenClient::new(&env, &token);
+    client.configure_router(&router);
+    assert!(client.try_configure_router(&attacker).is_err());
+    let params = auth_params(&sender, &router, &token);
+    let balance = token_client.balance(&sender);
+    token_client.approve(&sender, &contract_id, &params.total_amount, &1000);
+
+    // No mock authorization: possession of the allowance alone grants no
+    // authority to create a stream or redirect the sender's funds.
+    env.mock_auths(&[]);
+    assert!(client.try_create_from_router(&params).is_err());
+    assert!(client.try_create(&params).is_err());
+    assert_eq!(token_client.balance(&sender), balance);
+    assert_eq!(
+        token_client.allowance(&sender, &contract_id),
+        params.total_amount
+    );
+
+    env.mock_all_auths();
+    let redirected = CreateLockupParams {
+        recipient: attacker,
+        ..params.clone()
+    };
+    assert!(client.try_create_from_router(&redirected).is_err());
+    token_client.approve(&sender, &contract_id, &(params.total_amount - 1), &1000);
+    assert!(client.try_create_from_router(&params).is_err());
+    assert_eq!(token_client.balance(&sender), balance);
+    assert!(client.try_get_stream(&1).is_err());
+    token_client.approve(&sender, &contract_id, &params.total_amount, &1000);
+    assert_eq!(client.create_from_router(&params), 1);
+    assert_eq!(token_client.allowance(&sender, &contract_id), 0);
+    assert_eq!(token_client.balance(&contract_id), params.total_amount);
+    assert_eq!(client.get_stream(&1).sender, sender);
+}
+
+#[test]
 fn test_exact_authorization_trees_for_sensitive_lockup_calls() {
     let (env, contract_id, sender, recipient, token, _) = setup_test();
     let client = get_client(&env, &contract_id);

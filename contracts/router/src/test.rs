@@ -89,6 +89,7 @@ fn register_protocol(env: &Env, admin: &Address) -> (Address, Address, Address, 
         StreamNftContract,
         StreamNftContractArgs::__constructor(&router_id, &name, &symbol),
     );
+    lockup::LockupContractClient::new(env, &lockup_id).configure_router(&router_id);
     RouterContractClient::new(env, &router_id).configure(&flow_id, &lockup_id, &nft_id);
     (flow_id, lockup_id, nft_id, router_id)
 }
@@ -158,6 +159,7 @@ fn release_wasm_critical_paths_and_resource_limits() {
     let nft = release_nft_wasm::Client::new(&env, &nft_id);
     let router = release_router_wasm::Client::new(&env, &router_id);
     router.configure(&flow_id, &lockup_id, &nft_id);
+    release_lockup_wasm::Client::new(&env, &lockup_id).configure_router(&router_id);
 
     let flow_token_id = router.create_flow_stream(
         &sender,
@@ -210,6 +212,7 @@ fn release_wasm_critical_paths_and_resource_limits() {
         granularity: 3_600,
         cancelable: true,
     };
+    TokenClient::new(&env, &token).approve(&sender, &lockup_id, &lockup_params.total_amount, &1000);
     let lockup_token_id = router.create_lockup_stream(&lockup_params, &true);
     assert_and_print_profile("router_create_lockup", &env);
 
@@ -585,12 +588,9 @@ fn test_end_to_end_lockup_stream() {
         cancelable: false,
     };
 
+    token_client.approve(&sender, &lockup_id, &(100 * decimals as i128), &10_000_000);
     let token_nft_id = router_client.create_lockup_stream(&params, &true);
     assert_eq!(token_nft_id, 1);
-    let core_params = shared::types::CreateLockupParams {
-        recipient: router_id.clone(),
-        ..params.clone()
-    };
     assert_eq!(
         env.auths(),
         std::vec![(
@@ -600,19 +600,7 @@ fn test_end_to_end_lockup_stream() {
                 &router_id,
                 "create_lockup_stream",
                 (params.clone(), true).into_val(&env),
-                std::vec![invocation(
-                    &env,
-                    &lockup_id,
-                    "create",
-                    (core_params,).into_val(&env),
-                    std::vec![invocation(
-                        &env,
-                        &token_id,
-                        "transfer",
-                        (sender.clone(), lockup_id.clone(), 100 * decimals as i128,).into_val(&env),
-                        std::vec![],
-                    )],
-                )],
+                std::vec![],
             ),
         )]
     );
@@ -1016,6 +1004,7 @@ fn test_lockup_transfer_partial_withdraw_cancel_and_terminal_withdraw() {
         max_entry_ttl: 10_000_000,
     });
 
+    token.approve(&sender, &lockup_id, &(100 * decimals), &10_000_000);
     let token_nft_id = router.create_lockup_stream(
         &CreateLockupParams {
             sender: sender.clone(),

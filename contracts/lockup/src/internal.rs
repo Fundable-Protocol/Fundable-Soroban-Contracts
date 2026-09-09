@@ -45,6 +45,34 @@ fn transfer_exact(env: &Env, token_addr: &Address, from: &Address, to: &Address,
     }
 }
 
+/// Transfer tokens using the allowance granted to this Lockup contract and
+/// require exact sender debit and recipient credit.
+fn transfer_from_allowance_exact(
+    env: &Env,
+    token_addr: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) {
+    if from == to {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+
+    let token_client = token::Client::new(env, token_addr);
+    let spender = env.current_contract_address();
+    let from_before = token_client.balance(from);
+    let to_before = token_client.balance(to);
+    token_client.transfer_from(&spender, from, to, &amount);
+    let from_after = token_client.balance(from);
+    let to_after = token_client.balance(to);
+
+    if from_before.checked_sub(from_after) != Some(amount)
+        || to_after.checked_sub(to_before) != Some(amount)
+    {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read-only vesting calculations
 // ---------------------------------------------------------------------------
@@ -161,6 +189,17 @@ pub fn refundable_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 /// Validates inputs, transfers tokens from sender to the contract, stores the
 /// stream record, and emits the creation event.
 pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
+    create_with_funding(env, params, false)
+}
+
+/// Create a Lockup stream using a pre-existing sender allowance granted to
+/// this contract. The public entry point restricts this path to the trusted
+/// Router, so arbitrary callers cannot consume a user's allowance.
+pub fn create_from_allowance(env: &Env, params: &CreateLockupParams) -> u64 {
+    create_with_funding(env, params, true)
+}
+
+fn create_with_funding(env: &Env, params: &CreateLockupParams, use_allowance: bool) -> u64 {
     // Validate: sender and recipient must differ (H-1)
     if params.sender == params.recipient {
         panic_with_error!(env, LockupError::SenderEqualsRecipient);
@@ -238,13 +277,23 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     );
 
     // Transfer tokens from sender into the contract (fully pre-funded)
-    transfer_exact(
-        env,
-        &params.token,
-        &params.sender,
-        &env.current_contract_address(),
-        params.total_amount,
-    );
+    if use_allowance {
+        transfer_from_allowance_exact(
+            env,
+            &params.token,
+            &params.sender,
+            &env.current_contract_address(),
+            params.total_amount,
+        );
+    } else {
+        transfer_exact(
+            env,
+            &params.token,
+            &params.sender,
+            &env.current_contract_address(),
+            params.total_amount,
+        );
+    }
 
     // Emit event
     events::emit_lockup_created(
