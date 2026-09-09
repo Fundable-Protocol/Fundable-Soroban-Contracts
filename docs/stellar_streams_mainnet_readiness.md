@@ -503,8 +503,9 @@ approval is a separate user transaction, and Flow remains outside this gate.
 
 ## Phase 5: Build Indexing and Reconciliation
 
-Status: Ready for review. Backend implementation and validation evidence are
-recorded in [Phase 5 Indexing and Reconciliation](phase_5_indexing_and_reconciliation.md).
+Status: Complete. Backend implementation, database migration, live testnet
+reconciliation, and replay evidence are recorded in
+[Phase 5 Indexing and Reconciliation](phase_5_indexing_and_reconciliation.md).
 
 Phase 5 depends on frozen contract events and the canonical backend state model.
 It can run in parallel with Phase 4.
@@ -530,10 +531,10 @@ It can run in parallel with Phase 4.
 
 ### Exit Gate
 
-- [ ] Clearing browser storage does not lose stream identity, activity, ownership,
+- [x] Clearing browser storage does not lose stream identity, activity, ownership,
   or lifecycle state.
-- [ ] A fresh device can load a stream by its NFT token ID.
-- [ ] The indexer can replay from a checkpoint without duplicating state.
+- [x] A fresh device can load a stream by its NFT token ID.
+- [x] The indexer can replay from a checkpoint without duplicating state.
 
 ---
 

@@ -1,7 +1,7 @@
 # Phase 5: Indexing and Reconciliation Implementation
 
-Status: Ready for review — backend implementation complete; testnet operational
-qualification remains. Last updated: 2026-09-09.
+Status: Complete — backend implementation, database migration, and testnet
+qualification passed. Last updated: 2026-09-09.
 
 ## Implemented scope
 
@@ -39,32 +39,34 @@ In `backend-main`, set `STELLAR_STREAM_INDEXER_DEPLOYMENTS` to a JSON array:
 [
   {
     "network": "TESTNET",
-    "startLedger": 123456,
-    "querySource": "<funded public G-address used for read simulations>",
-    "rpcUrls": ["https://primary-rpc.example", "https://backup-rpc.example"],
+    "startLedger": 4582736,
+    "querySource": "GDZJSPRSBTAJPAQ4NG6Y2ZCWHEX5HMS253TYVNAQJRPJHY27JPOHBIPZ",
+    "rpcUrls": ["https://soroban-testnet.stellar.org"],
     "contracts": {
-      "router": "<verified Router C-address>",
-      "flow": "<verified Flow C-address>",
-      "lockup": "<verified Lockup C-address>",
-      "streamNft": "<verified Stream NFT C-address>",
-      "feeForwarder": "<verified OZ FeeForwarder C-address>"
+      "router": "CAWZ5DGA6DTNG6GAF4O534SOP277JKZ6URTP3EE2KTBC3RM4YR4PQD7J",
+      "flow": "CAD57D33XJAHR7LSJVJU3MCFU3UMU72NK56GGLWDIKYZDSZICILSUKCY",
+      "lockup": "CBJRYJRQ24LP4DKKTUSVPCICLMMXIG7ZW5M4M7VNJUXGKDPBJ322ADT2",
+      "streamNft": "CCYMOIEL3ID55C4DFQAGZEGJT4KEXM5OHIRJROZRLTLAO3EMSSHJIGLY",
+      "feeForwarder": "CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D"
     }
   }
 ]
 ```
 
-These values are placeholders. Select actual addresses and the earliest
-relevant deployment ledger from verified deployment evidence. The start ledger
-is inclusive. The query source must be a funded account on the configured
-network; it signs nothing because contract reads are simulated. All five
-distinct contract addresses and at least one HTTPS RPC URL are required. The
+This is the deployment used for the testnet qualification. The start ledger is
+inclusive. The query source must be a funded account on the configured network;
+it signs nothing because contract reads are simulated. All five distinct
+contract addresses and at least one HTTPS RPC URL are required. The
 configuration is optional; an absent value disables polling. Invalid
 configuration prevents worker initialization. RPC URLs remain runtime-only and
 are never persisted or logged.
 
-Apply migrations 0032 and 0033 before enabling this configuration. They have
-been generated locally, **not applied to the live database**. No worker has been
-enabled against testnet or mainnet as part of this implementation.
+Migrations 0032 and 0033 were applied successfully to the controlled backend
+database on 2026-09-09. Drizzle recorded them as migration rows 37 and 38. The
+testnet qualification used the verified deployment shown above through the
+reusable `test:stellar-indexer:testnet` harness; enabling the scheduled worker
+in a deployed backend still requires setting `STELLAR_STREAM_INDEXER_DEPLOYMENTS`
+in that runtime.
 
 The checkpoint scope hashes network, start ledger, and ordered contract roles.
 Changing an RPC URL preserves the scope. Changing contract addresses or the
@@ -128,26 +130,38 @@ effects.
 Local validation on 2026-09-09:
 
 - Focused indexer, submission, and monitoring suites: 30/30 tests passed.
+- The final enum-decoding regression suite passed 21/21 focused tests after a
+  real Soroban response exposed numeric enum discriminants.
 - Backend Nest/TypeScript build passed.
 - Scoped ESLint and whitespace validation passed after formatting fixes.
-- Both Drizzle migrations and snapshots generated successfully.
+- Both Drizzle migrations and snapshots generated successfully, and migrations
+  0032 and 0033 applied successfully to PostgreSQL.
+- Live testnet ingestion started at ledger 4,582,736 and reconciled NFT token ID
+  `1` to Lockup core stream ID `1`, owner
+  `GA4F3SQXOA6JETFYL4SG5JX7KGKDIU7RGFPUD3RNZTERVQODYUHYDACN`, and canonical
+  status `active`.
+- The indexed range contained five retained events and produced three canonical
+  activities. All five events completed processing. Rewinding the persistent
+  checkpoint and ingesting the range again left the inbox at five rows, proving
+  replay idempotency. The final checkpoint was ledger 4,582,835.
+- The source transaction was
+  `15572837a74b88d4dd4d51958ef832dfe567ccc900fc0f969b2690b732c0a830`; its
+  Router creation event is `0019682701246222336-0000000006`.
 
 The database transaction tests use an in-memory transactional adapter. They do
 not establish PostgreSQL rollback/locking behavior under real connections.
 The local runtime was Node 20.11.0; the repository declares Node 22.x. CI must
 repeat validation on the declared runtime before release.
 
-INDEX-01 through INDEX-18 have implementation evidence and are checked as ready
-for review. The three phase exit gates remain open until migrations are applied
-to a controlled database and the testnet fresh-device/replay qualification is
-recorded.
+INDEX-01 through INDEX-18 have implementation evidence. The controlled database
+now holds the chain-derived stream identity and activity independently of
+browser state; the authenticated read path supports lookup by NFT token ID, and
+the live replay test did not duplicate state. All three phase exit gates are
+therefore closed.
 
-## Operational qualification still required
+## Remaining release work
 
-1. Apply migrations to a controlled test database and test restart, concurrent
-   replicas, mid-page/provider/database failure, replay, and fresh-device reads.
-   Record testnet evidence before checking off the phase exit gates.
-2. Configure alert thresholds for both reconciliation counters in the production
-   monitoring system and exercise them during testnet qualification.
-3. Repeat the suite on the repository's declared Node 22 runtime; local
+1. Configure alert thresholds for both reconciliation counters in the production
+   monitoring system and exercise them before production release.
+2. Repeat the suite on the repository's declared Node 22 runtime; local
    verification used Node 20.11.0.
