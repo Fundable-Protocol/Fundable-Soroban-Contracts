@@ -471,7 +471,33 @@ succeeds.
 
 - [x] A browser cannot cause the relayer to sign anything except an authenticated,
   policy-approved Fundable operation.
-- [ ] The OZ native quote/build/sign/submit path passes testnet integration tests.
+- [x] The OZ native quote/build/sign/submit path passes testnet integration tests.
+
+Testnet exit evidence (2026-09-09): the Lockup sponsorship path passed against
+contracts built reproducibly from `62dfc41ac8c1fa48d66c5fe5e9c7e98f9e4f9529`
+and backend harness revision `bb92784`. The verified Lockup and Router WASM
+hashes are respectively
+`500f152a8ffb8126e36af6df149eee5712c9a575b9c1979142de2619fe8920d3`
+and `c1ddde9e7679fd1068523a7994a7fbc1390a0a98526ccfba0a317886f36b6f09`.
+The Stream NFT was created with the Router as admin in transaction
+`c23a1170931eb9c6fff32599b0cf4dc283b727638367c1f044db46ee5c472971`;
+Lockup trust and Router dependencies were fixed once in transactions
+`f4ea555e78ca006ed5ce399c3d55f6b72d3399f7e457b01e0eee0798edef9d21`
+and `040061ba6a95c2b2e9231488384b72af7c0fb45d5ab4993b51cec5b11c096bb6`.
+The user first approved the exact `0.1000000 USDC` Lockup funding allowance in
+transaction
+`417c14cfad8c588ccca65e3682182b8d4b5ba5abc83e79bddc959e30ef955cf6`.
+OZ Relayer `v1.6.0` then quoted `363401` USDC base units, built the
+FeeForwarder transaction, accepted the backend-validated signed authorization,
+and submitted relayer request `8473c3c7-80b8-43a2-962c-3ceab981b8ed`.
+Transaction
+`15572837a74b88d4dd4d51958ef832dfe567ccc900fc0f969b2690b732c0a830`
+confirmed in ledger `4582736` and returned Stream NFT token ID `1`. The build
+charged `363401` base units with signed maximum `381571`, below the configured
+`10000000` ceiling. Post-confirmation Router reads report core stream ID `1`,
+the expected user as owner, active status, Lockup stream type, and
+`transferable: true`. This qualifies Lockup creation only: the funding
+approval is a separate user transaction, and Flow remains outside this gate.
 
 ---
 
@@ -739,6 +765,7 @@ audit reports, transaction hashes, deployment manifests, or runbook exercises.
 | RELAYER-08 | Production Compose boundary and credential runbook | `ops/openzeppelin-relayer/docker-compose.production.yaml` | Fundable | 2026-09-05 | Loopback default; secrets restricted to relayer/backend runtimes |
 | SPONSOR-01 | Typed backend sponsorship quote endpoint and regression tests | `backend-main` commit `3770147` | Fundable | 2026-09-05 | Backend-owned fee token; fail-closed configuration and response validation |
 | SPONSOR-02 | Typed backend sponsorship build endpoint and regression tests | `backend-main` commit `f1add69` | Fundable | 2026-09-05 | Requires Soroban auth entry and maximum fee fields; rejects fee-token mismatch |
+| Phase 4 exit gate | Native OZ quote/build/sign/submit testnet run | contracts `62dfc41`; backend `bb92784`; tx `15572837a74b88d4dd4d51958ef832dfe567ccc900fc0f969b2690b732c0a830` | Fundable | 2026-09-09 | Lockup token ID 1 confirmed in ledger 4582736; separate exact funding approval recorded above |
 
 ## Release Identity
 
@@ -746,10 +773,10 @@ Complete this section for every release candidate.
 
 | Component | Repository revision | Artifact / deployment identity |
 | --- | --- | --- |
-| Soroban contracts | TBD | WASM hashes and contract IDs TBD |
+| Soroban contracts | Phase 4 test candidate `62dfc41ac8c1fa48d66c5fe5e9c7e98f9e4f9529` | Lockup `CBJRYJRQ24LP4DKKTUSVPCICLMMXIG7ZW5M4M7VNJUXGKDPBJ322ADT2` / `500f152a...20d3`; Router `CAWZ5DGA6DTNG6GAF4O534SOP277JKZ6URTP3EE2KTBC3RM4YR4PQD7J` / `c1ddde9e...6f09`; NFT `CCYMOIEL3ID55C4DFQAGZEGJT4KEXM5OHIRJROZRLTLAO3EMSSHJIGLY` / `0e6440a0...db63` |
 | Stellar frontend | TBD | Build/deployment ID TBD |
-| Backend | TBD | Build/deployment ID TBD |
-| OpenZeppelin Relayer | TBD | Version, image digest, and config hash TBD |
+| Backend | Phase 4 harness `bb92784` | Testnet validation and submission PASS; production deployment ID TBD |
+| OpenZeppelin Relayer | `v1.6.0` / `554f15adb4a20b180a367154d7d383351bb75b5a` | `openzeppelin/openzeppelin-relayer:1.6.0@sha256:89d7b3df96949322dacb6df25732d4d747b9612b562ba87324997c2ae2c937ae`; production config hash TBD |
 | FeeForwarder | OpenZeppelin Stellar Contracts `v0.7.1` / `3f81125bed3114cc93f5fca6d13240082050269a` | Testnet `CDJM3SROZG3TY3URXSFH7J5GEIVFHZZKWX5DVJISED6YBIONA76WBU7D`; SHA-256 `c0292b4a994c0c94280a5a1783d907ae54b52f5e34e74bb7d5d65645ca7508fa` |
 
 ## Future-Task Handoff
