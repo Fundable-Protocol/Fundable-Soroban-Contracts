@@ -17,6 +17,8 @@ The working tree of `backend-main` now contains:
   `PaymentStreamIndexerCheckpoint`, plus the corresponding Drizzle snapshot.
 - Migration `0033_payment-stream-indexer-processing.sql`: durable semantic
   processing state, bounded retries, and operator-visible failure codes.
+- Migration `0034_payment-stream-reconciliation-cursor.sql`: a persistent
+  per-deployment cursor that bounds each periodic reconciliation run.
 - `payment-stream-reconciliation.service.ts`: event-to-stream mapping,
   canonical projection, pending-submission confirmation, periodic chain-state
   reconciliation, and mismatch/failure alerts.
@@ -61,12 +63,11 @@ configuration is optional; an absent value disables polling. Invalid
 configuration prevents worker initialization. RPC URLs remain runtime-only and
 are never persisted or logged.
 
-Migrations 0032 and 0033 were applied successfully to the controlled backend
-database on 2026-09-09. Drizzle recorded them as migration rows 37 and 38. The
-testnet qualification used the verified deployment shown above through the
-reusable `test:stellar-indexer:testnet` harness; enabling the scheduled worker
-in a deployed backend still requires setting `STELLAR_STREAM_INDEXER_DEPLOYMENTS`
-in that runtime.
+Migrations 0032, 0033, and 0034 were applied successfully to the controlled
+backend database on 2026-09-09. The testnet qualification used the verified
+deployment shown above through the reusable `test:stellar-indexer:testnet`
+harness; enabling the scheduled worker in a deployed backend still requires
+setting `STELLAR_STREAM_INDEXER_DEPLOYMENTS` in that runtime.
 
 The checkpoint scope hashes network, start ledger, and ordered contract roles.
 Changing an RPC URL preserves the scope. Changing contract addresses or the
@@ -110,12 +111,24 @@ ten attempts, after which the stored error code and failure metric make the row
 operator-visible without blocking later events. Replays remain safe because
 both the inbox and public activity tables enforce chain-event identity.
 
-Every minute, the worker also walks all non-terminal canonical streams using
-keyset pagination and re-queries Router/core state. Chain values overwrite a
-stale projection. Owner, lifecycle, or accounting disagreement increments
-`fundable_stream_reconciliation_mismatches_total`; query and projection
-failures increment `fundable_stream_reconciliation_failures_total`. Both carry
-bounded `network` and `reason` labels for alert rules.
+Every minute, the worker processes at most 100 non-terminal canonical streams
+per deployment. It resumes after the stream ID stored on the deployment
+checkpoint and returns to the beginning after reaching the end, so one run no
+longer grows with the total stream count. The cursor advances only after the
+selected batch has been attempted; a process restart continues from the same
+position.
+
+Router and core state remain live reads. Token symbol and decimals are cached
+for one hour per process, keyed by network and token contract. Concurrent
+lookups share the same promise, and failed lookups are evicted immediately so a
+temporary RPC failure is retryable. This removes two repeated simulations per
+stream after the first lookup for a token.
+
+Chain values overwrite a stale projection. Owner, lifecycle, or accounting
+disagreement increments `fundable_stream_reconciliation_mismatches_total`;
+query and projection failures increment
+`fundable_stream_reconciliation_failures_total`. Both carry bounded `network`
+and `reason` labels for alert rules.
 
 The existing authenticated detail and activity endpoints load deployment-scoped
 canonical rows from PostgreSQL by database ID or NFT token ID. They accept an
@@ -129,13 +142,16 @@ effects.
 
 Local validation on 2026-09-09:
 
-- Focused indexer, submission, and monitoring suites: 30/30 tests passed.
+- Focused indexer, submission, and monitoring suites: 32/32 tests passed.
 - The final enum-decoding regression suite passed 21/21 focused tests after a
   real Soroban response exposed numeric enum discriminants.
 - Backend Nest/TypeScript build passed.
 - Scoped ESLint and whitespace validation passed after formatting fixes.
-- Both Drizzle migrations and snapshots generated successfully, and migrations
-  0032 and 0033 applied successfully to PostgreSQL.
+- Drizzle migrations and snapshots generated successfully, and migrations
+  0032, 0033, and 0034 applied successfully to PostgreSQL.
+- Regression coverage proves token metadata is fetched once across repeated
+  reconciliations, each deployment processes only one 100-stream batch per
+  tick, and a completed cursor wraps to the beginning.
 - Live testnet ingestion started at ledger 4,582,736 and reconciled NFT token ID
   `1` to Lockup core stream ID `1`, owner
   `GA4F3SQXOA6JETFYL4SG5JX7KGKDIU7RGFPUD3RNZTERVQODYUHYDACN`, and canonical
