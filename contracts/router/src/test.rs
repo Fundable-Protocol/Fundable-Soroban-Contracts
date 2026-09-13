@@ -588,7 +588,6 @@ fn test_end_to_end_lockup_stream() {
         cancelable: false,
     };
 
-    token_client.approve(&sender, &lockup_id, &(100 * decimals as i128), &10_000_000);
     let token_nft_id = router_client.create_lockup_stream(&params, &true);
     assert_eq!(token_nft_id, 1);
     assert_eq!(
@@ -600,7 +599,19 @@ fn test_end_to_end_lockup_stream() {
                 &router_id,
                 "create_lockup_stream",
                 (params.clone(), true).into_val(&env),
-                std::vec![],
+                std::vec![invocation(
+                    &env,
+                    &token_id,
+                    "approve",
+                    (
+                        sender.clone(),
+                        lockup_id.clone(),
+                        100 * decimals as i128,
+                        1_300_u32,
+                    )
+                        .into_val(&env),
+                    std::vec![],
+                )],
             ),
         )]
     );

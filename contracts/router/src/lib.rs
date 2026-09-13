@@ -5,7 +5,9 @@ use shared::errors::RouterError;
 use shared::events;
 use shared::storage::{DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD};
 use shared::types::{CanonicalStreamStatus, CreateLockupParams, StreamMetadata, StreamType};
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env};
+
+const LOCKUP_ALLOWANCE_LEDGERS: u32 = 1_200;
 
 mod flow_client {
     soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/flow.wasm");
@@ -253,6 +255,19 @@ impl RouterContract {
 
         let lockup_client = lockup_client::Client::new(&env, &lockup_addr);
         let nft_client = nft_client::Client::new(&env, &nft_addr);
+
+        // Grant the trusted Lockup contract an exact, short-lived allowance in
+        // the same authorization tree as stream creation. The subsequent
+        // transfer_from consumes it atomically, so no separate approval
+        // transaction or user-paid XLM fee is required.
+        token::Client::new(&env, &params.token).approve(
+            &params.sender,
+            &lockup_addr,
+            &params.total_amount,
+            &env.ledger()
+                .sequence()
+                .saturating_add(LOCKUP_ALLOWANCE_LEDGERS),
+        );
 
         // Map to lockup_client's type
         let lockup_params = lockup_client::CreateLockupParams {
