@@ -41,7 +41,7 @@ pub struct LockupContract;
 /// Public API for the Fundable Lockup vesting contract.
 ///
 /// Functions are organized into:
-/// 1. **Admin** — initialize, upgrade, set_admin
+/// 1. **Admin** — constructor, upgrade, set_admin
 /// 2. **Create** — create (with timestamps and optional cliff)
 /// 3. **Mutate** — withdraw, cancel, renounce
 /// 4. **Query** — get_stream, status_of, withdrawable_amount_of, etc.
@@ -51,13 +51,8 @@ impl LockupContract {
     // Admin Functions
     // -----------------------------------------------------------------------
 
-    /// Initialize the contract with an admin address.
-    ///
-    /// Must be called exactly once before any other function.
-    pub fn initialize(env: Env, admin: Address) {
-        if storage::has_admin(&env) {
-            panic_with_error!(&env, LockupError::AlreadyInitialized);
-        }
+    /// Atomically initialize the contract during deployment.
+    pub fn __constructor(env: Env, admin: Address) {
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
         events::emit_admin_initialized(&env, &admin);
@@ -84,6 +79,21 @@ impl LockupContract {
         events::emit_admin_transferred(&env, &admin, &new_admin);
     }
 
+    /// Configure the trusted Router once.
+    ///
+    /// The Router-only creation path consumes a sender's pre-existing token
+    /// allowance without requiring a nested user authorization. This is the
+    /// call shape required by OpenZeppelin FeeForwarder sponsorship.
+    pub fn configure_router(env: Env, router: Address) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+        if storage::has_router(&env) {
+            panic_with_error!(&env, LockupError::AlreadyInitialized);
+        }
+        storage::set_router(&env, &router);
+        storage::extend_instance_ttl(&env);
+    }
+
     // -----------------------------------------------------------------------
     // Stream Creation
     // -----------------------------------------------------------------------
@@ -103,6 +113,19 @@ impl LockupContract {
         storage::extend_instance_ttl(&env);
 
         internal::create(&env, &params)
+    }
+
+    /// Create a fully funded stream through the trusted Router using an
+    /// allowance previously granted by the sender to this Lockup contract.
+    pub fn create_from_router(env: Env, params: CreateLockupParams) -> u64 {
+        let router = storage::get_router(&env);
+        router.require_auth();
+        if params.recipient != router {
+            panic_with_error!(&env, LockupError::Unauthorized);
+        }
+        storage::extend_instance_ttl(&env);
+
+        internal::create_from_allowance(&env, &params)
     }
 
     // -----------------------------------------------------------------------

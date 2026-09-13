@@ -1,0 +1,6 @@
+services:
+  relayer:
+    environment:
+      # No implicit/default address is permitted. DEPLOY-05 supplies the
+      # verified mainnet deployment when the mainnet configuration is enabled.
+      STELLAR_MAINNET_FEE_FORWARDER_ADDRESS: ${STELLAR_MAINNET_FEE_FORWARDER_ADDRESS:?set the verified mainnet FeeForwarder address}

@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_scale_descale_roundtrip() {
         // Scale then descale should recover the original amount (no dust)
-        let original = 42_000_0000i128; // 42 tokens with 7 decimals
+        let original = 420_000_000_i128; // 42 tokens with 7 decimals
         let scaled = scale_amount(original, 7);
         let recovered = descale_amount(scaled, 7);
         assert_eq!(recovered, original);

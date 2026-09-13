@@ -28,11 +28,6 @@ pub fn get_admin(env: &Env) -> Address {
         .expect("not initialized")
 }
 
-/// Check if the contract has been initialized (admin is set).
-pub fn has_admin(env: &Env) -> bool {
-    env.storage().instance().has(&DataKey::Admin)
-}
-
 // ---------------------------------------------------------------------------
 // Next Stream ID
 // ---------------------------------------------------------------------------

@@ -1,0 +1,16 @@
+services:
+  relayer:
+    # OpenZeppelin Relayer v1.6.0, published from Git tag v1.6.0
+    # (source commit 554f15adb4a20b180a367154d7d383351bb75b5a).
+    # Pin the multi-architecture OCI index digest so the deployed bytes cannot
+    # change if a registry tag is moved.
+    image: openzeppelin/openzeppelin-relayer:1.6.0@sha256:89d7b3df96949322dacb6df25732d4d747b9612b562ba87324997c2ae2c937ae
+    pull_policy: always
+    build: !reset null
+    # Keep the authenticated API off public interfaces by default. Set this
+    # only to an RFC1918/private service address when the backend is remote.
+    ports: !override
+      - "${RELAYER_BIND_ADDRESS:-127.0.0.1}:${RELAYER_PORT:-8080}:8080/tcp"
+    environment:
+      ENABLE_SWAGGER: "false"
+      METRICS_ENABLED: "false"

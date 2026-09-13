@@ -25,5 +25,10 @@ Thumbs.db
 *.wasm
 !contracts/**/wasm/*.wasm
 
-/docs
-
+/docs/*
+!/docs/stellar_streams_mainnet_readiness.md
+!/docs/stellar_streams_lifecycle_and_authorization.md
+!/docs/phase_2_contract_interface_evidence.md
+!/docs/phase_3_canonical_backend_state.md
+!/docs/upgrade_governance.md
+!/docs/phase_5_indexing_and_reconciliation.md

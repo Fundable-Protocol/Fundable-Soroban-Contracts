@@ -72,6 +72,8 @@ pub enum FlowError {
     SenderEqualsRecipient = 20,
     /// Rate per second must not be negative.
     NegativeRate = 21,
+    /// The token did not debit and credit the exact requested amount.
+    TokenTransferMismatch = 22,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +104,10 @@ pub enum LockupError {
     NotInitialized = 109,
     /// Sender and recipient must be different addresses.
     SenderEqualsRecipient = 110,
+    /// Start and cliff unlock amounts must be nonnegative and fit in total amount.
+    InvalidUnlockAmount = 111,
+    /// The token did not debit and credit the exact requested amount.
+    TokenTransferMismatch = 112,
 }
 
 // ---------------------------------------------------------------------------
@@ -134,4 +140,6 @@ pub enum RouterError {
     NotInitialized = 302,
     NotAuthorized = 303,
     InvalidStreamType = 304,
+    /// Core contract addresses were already configured.
+    AlreadyConfigured = 305,
 }

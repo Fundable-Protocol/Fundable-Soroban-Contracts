@@ -3,12 +3,14 @@ default: build
 all: test
 
 # Build contracts in dependency order. Router imports the generated Flow,
-# Lockup, and Stream NFT WASM specifications at compile time.
+# Lockup, and Stream NFT WASM specifications at compile time. Governance has
+# no runtime dependency on the governed contract WASMs.
 build:
 	stellar contract build --package flow
 	stellar contract build --package lockup
 	stellar contract build --package stream-nft
 	stellar contract build --package paymaster
+	stellar contract build --package governance
 	stellar contract build --package router
 	@echo ""
 	@echo "Built WASM artifacts:"
@@ -17,6 +19,10 @@ build:
 # Run all tests
 test: build
 	cargo test
+
+# Verify and exercise the checksum-pinned mainnet-candidate WASMs.
+test-release:
+	./scripts/test_release_wasms.sh
 
 # Run tests without building WASM first (faster iteration)
 test-quick:
@@ -48,4 +54,4 @@ deploy:
 		--source $(SOURCE) \
 		--network testnet
 
-.PHONY: default all build test test-quick fmt fmt-check clippy clean deploy
+.PHONY: default all build test test-release test-quick fmt fmt-check clippy clean deploy

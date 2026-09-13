@@ -11,12 +11,90 @@
 
 #![cfg(test)]
 
+extern crate std;
+
 use super::*;
+use proptest::prelude::*;
 use soroban_sdk::{
-    testutils::{Address as _, Ledger, LedgerInfo},
+    contract, contracterror, contractimpl, contracttype, panic_with_error,
+    testutils::{
+        Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Ledger, LedgerInfo,
+    },
     token::{StellarAssetClient, TokenClient},
-    Address, Env,
+    Address, Env, IntoVal, Symbol, Val, Vec,
 };
+
+#[contracttype]
+#[derive(Clone)]
+enum AdversarialTokenKey {
+    Balance(Address),
+    Mode,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum AdversarialTokenError {
+    Rejected = 1,
+    InsufficientBalance = 2,
+}
+
+#[contract]
+struct AdversarialToken;
+
+#[contractimpl]
+impl AdversarialToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &amount);
+    }
+
+    pub fn set_mode(env: Env, mode: u32) {
+        env.storage()
+            .instance()
+            .set(&AdversarialTokenKey::Mode, &mode);
+    }
+
+    pub fn balance(env: Env, account: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&AdversarialTokenKey::Balance(account))
+            .unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let mode: u32 = env
+            .storage()
+            .instance()
+            .get(&AdversarialTokenKey::Mode)
+            .unwrap_or(0);
+        if mode == 1 {
+            panic_with_error!(&env, AdversarialTokenError::Rejected);
+        }
+        if mode == 2 {
+            return;
+        }
+
+        let from_balance = Self::balance(env.clone(), from.clone());
+        if amount < 0 || from_balance < amount {
+            panic_with_error!(&env, AdversarialTokenError::InsufficientBalance);
+        }
+        let to_balance = Self::balance(env.clone(), to.clone());
+        let credited = if mode == 3 { amount - 1 } else { amount };
+        env.storage().persistent().set(
+            &AdversarialTokenKey::Balance(from),
+            &(from_balance - amount),
+        );
+        env.storage()
+            .persistent()
+            .set(&AdversarialTokenKey::Balance(to), &(to_balance + credited));
+    }
+}
+
+mod current_lockup_wasm {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/lockup.wasm");
+}
 
 // ---------------------------------------------------------------------------
 // Test Helpers
@@ -34,7 +112,22 @@ fn setup_test() -> (
     Address,
     TokenClient<'static>,
 ) {
-    let env = Env::default();
+    setup_test_with_snapshots(true)
+}
+
+fn setup_test_with_snapshots(
+    capture_snapshot_at_drop: bool,
+) -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    Address,
+    TokenClient<'static>,
+) {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop,
+    });
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
 
@@ -63,10 +156,8 @@ fn setup_test() -> (
     // Mint tokens to the sender (1,000,000 tokens)
     sac_admin.mint(&sender, &(1_000_000 * ONE_TOKEN));
 
-    // Register and initialize the Lockup contract
-    let contract_id = env.register(LockupContract, ());
-    let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
+    // Register the Lockup contract with atomic constructor arguments.
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
 
     (env, contract_id, sender, recipient, token, token_client)
 }
@@ -75,32 +166,309 @@ fn get_client<'a>(env: &Env, contract_id: &Address) -> LockupContractClient<'a> 
     LockupContractClient::new(env, contract_id)
 }
 
+fn invocation(
+    env: &Env,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+    sub_invocations: std::vec::Vec<AuthorizedInvocation>,
+) -> AuthorizedInvocation {
+    AuthorizedInvocation {
+        function: AuthorizedFunction::Contract((
+            contract.clone(),
+            Symbol::new(env, function),
+            args,
+        )),
+        sub_invocations,
+    }
+}
+
+fn assert_exact_auth(
+    env: &Env,
+    signer: &Address,
+    contract: &Address,
+    function: &str,
+    args: Vec<Val>,
+    sub_invocations: std::vec::Vec<AuthorizedInvocation>,
+) {
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            signer.clone(),
+            invocation(env, contract, function, args, sub_invocations),
+        )]
+    );
+}
+
+fn auth_params(sender: &Address, recipient: &Address, token: &Address) -> CreateLockupParams {
+    CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1_000,
+        end_time: 1_100,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    }
+}
+
+#[test]
+fn test_router_allowance_path_requires_router_and_preserves_funds_on_failure() {
+    let (env, contract_id, sender, _, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let router = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_client = TokenClient::new(&env, &token);
+    client.configure_router(&router);
+    assert!(client.try_configure_router(&attacker).is_err());
+    let params = auth_params(&sender, &router, &token);
+    let balance = token_client.balance(&sender);
+    token_client.approve(&sender, &contract_id, &params.total_amount, &1000);
+
+    // No mock authorization: possession of the allowance alone grants no
+    // authority to create a stream or redirect the sender's funds.
+    env.mock_auths(&[]);
+    assert!(client.try_create_from_router(&params).is_err());
+    assert!(client.try_create(&params).is_err());
+    assert_eq!(token_client.balance(&sender), balance);
+    assert_eq!(
+        token_client.allowance(&sender, &contract_id),
+        params.total_amount
+    );
+
+    env.mock_all_auths();
+    let redirected = CreateLockupParams {
+        recipient: attacker,
+        ..params.clone()
+    };
+    assert!(client.try_create_from_router(&redirected).is_err());
+    token_client.approve(&sender, &contract_id, &(params.total_amount - 1), &1000);
+    assert!(client.try_create_from_router(&params).is_err());
+    assert_eq!(token_client.balance(&sender), balance);
+    assert!(client.try_get_stream(&1).is_err());
+    token_client.approve(&sender, &contract_id, &params.total_amount, &1000);
+    assert_eq!(client.create_from_router(&params), 1);
+    assert_eq!(token_client.allowance(&sender, &contract_id), 0);
+    assert_eq!(token_client.balance(&contract_id), params.total_amount);
+    assert_eq!(client.get_stream(&1).sender, sender);
+}
+
+#[test]
+fn test_exact_authorization_trees_for_sensitive_lockup_calls() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = auth_params(&sender, &recipient, &token);
+
+    let withdraw_stream = client.create(&params);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "create",
+        (params.clone(),).into_val(&env),
+        std::vec![invocation(
+            &env,
+            &token,
+            "transfer",
+            (sender.clone(), contract_id.clone(), params.total_amount,).into_val(&env),
+            std::vec![],
+        )],
+    );
+
+    env.ledger().set_timestamp(1_050);
+    client.withdraw(&withdraw_stream, &recipient, &recipient, &(10 * ONE_TOKEN));
+    assert_exact_auth(
+        &env,
+        &recipient,
+        &contract_id,
+        "withdraw",
+        (
+            withdraw_stream,
+            recipient.clone(),
+            recipient.clone(),
+            10 * ONE_TOKEN,
+        )
+            .into_val(&env),
+        std::vec![],
+    );
+    client.withdraw_max(&withdraw_stream, &recipient, &recipient);
+    assert_exact_auth(
+        &env,
+        &recipient,
+        &contract_id,
+        "withdraw_max",
+        (withdraw_stream, recipient.clone(), recipient.clone()).into_val(&env),
+        std::vec![],
+    );
+
+    let cancel_stream = client.create(&params);
+    client.cancel(&cancel_stream, &sender);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "cancel",
+        (cancel_stream, sender.clone()).into_val(&env),
+        std::vec![],
+    );
+
+    let renounce_stream = client.create(&params);
+    client.renounce(&renounce_stream, &sender);
+    assert_exact_auth(
+        &env,
+        &sender,
+        &contract_id,
+        "renounce",
+        (renounce_stream, sender.clone()).into_val(&env),
+        std::vec![],
+    );
+}
+
+#[test]
+fn test_exact_authorization_trees_for_lockup_admin_calls() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
+    let client = LockupContractClient::new(&env, &contract_id);
+
+    let wasm_hash = env
+        .deployer()
+        .upload_contract_wasm(current_lockup_wasm::WASM);
+    client.upgrade(&wasm_hash);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "upgrade",
+        (wasm_hash,).into_val(&env),
+        std::vec![],
+    );
+
+    client.set_admin(&new_admin);
+    assert_exact_auth(
+        &env,
+        &admin,
+        &contract_id,
+        "set_admin",
+        (new_admin,).into_val(&env),
+        std::vec![],
+    );
+}
+
+fn assert_lockup_accounting_invariants(
+    client: &LockupContractClient<'_>,
+    token_client: &TokenClient<'_>,
+    contract_id: &Address,
+    stream_id: u64,
+) {
+    let deposited = client.get_deposited_amount(&stream_id);
+    let withdrawn = client.get_withdrawn_amount(&stream_id);
+    let refunded = client.get_refunded_amount(&stream_id);
+    let streamed = client.streamed_amount_of(&stream_id);
+    let withdrawable = client.withdrawable_amount_of(&stream_id);
+    let stream = client.get_stream(&stream_id);
+    let remaining = deposited - withdrawn - refunded;
+
+    assert!(deposited > 0);
+    assert!(withdrawn >= 0);
+    assert!(refunded >= 0);
+    assert!(remaining >= 0);
+    assert!(streamed >= withdrawn && streamed <= deposited);
+    assert_eq!(withdrawable, streamed - withdrawn);
+    assert_eq!(stream.total_amount, deposited);
+    assert_eq!(token_client.balance(contract_id), remaining);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn prop_lockup_conserves_assets_through_withdrawal_and_cancellation(
+        total in 1_i128..=1_000_000_000_000_i128,
+        duration in 2_u64..=100_000_u64,
+        elapsed_percent in 0_u64..=100_u64,
+        granularity_percent in 1_u64..=100_u64,
+        start_unlock_percent in 0_i128..=100_i128,
+        withdraw_percent in 0_i128..=100_i128,
+    ) {
+        let (env, contract_id, sender, recipient, token, token_client) =
+            setup_test_with_snapshots(false);
+        let client = get_client(&env, &contract_id);
+        let initial_supply = token_client.balance(&sender);
+        let start_unlock = total * start_unlock_percent / 100;
+        let granularity = core::cmp::max(1, duration * granularity_percent / 100);
+        let params = CreateLockupParams {
+            sender: sender.clone(),
+            recipient: recipient.clone(),
+            token: token.clone(),
+            total_amount: total,
+            start_time: 1_000,
+            end_time: 1_000 + duration,
+            cliff_time: 0,
+            start_unlock_amount: start_unlock,
+            cliff_unlock_amount: 0,
+            granularity,
+            cancelable: true,
+        };
+        let stream_id = client.create(&params);
+        env.ledger().set_timestamp(1_000 + duration * elapsed_percent / 100);
+
+        assert_lockup_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+        let withdrawable = client.withdrawable_amount_of(&stream_id);
+        let withdrawal = withdrawable * withdraw_percent / 100;
+        if withdrawal > 0 {
+            client.withdraw(&stream_id, &recipient, &recipient, &withdrawal);
+        }
+        assert_lockup_accounting_invariants(&client, &token_client, &contract_id, stream_id);
+
+        client.cancel(&stream_id, &sender);
+        let deposited = client.get_deposited_amount(&stream_id);
+        let withdrawn = client.get_withdrawn_amount(&stream_id);
+        let refunded = client.get_refunded_amount(&stream_id);
+        let streamed = client.streamed_amount_of(&stream_id);
+        let remaining = deposited - withdrawn - refunded;
+        prop_assert_eq!(streamed, deposited - refunded);
+        prop_assert_eq!(client.withdrawable_amount_of(&stream_id), remaining);
+        prop_assert_eq!(token_client.balance(&contract_id), remaining);
+
+        if remaining > 0 {
+            client.withdraw_max(&stream_id, &recipient, &recipient);
+        }
+        prop_assert_eq!(
+            client.get_withdrawn_amount(&stream_id)
+                + client.get_refunded_amount(&stream_id),
+            deposited
+        );
+        prop_assert_eq!(token_client.balance(&contract_id), 0);
+        prop_assert_eq!(
+            token_client.balance(&sender)
+                + token_client.balance(&recipient)
+                + token_client.balance(&contract_id),
+            initial_supply
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Initialization Tests
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_initialize() {
+fn test_constructor_sets_admin() {
     let env = Env::default();
     env.ledger().set_protocol_version(25);
     env.mock_all_auths();
     let admin = Address::generate(&env);
-    let contract_id = env.register(LockupContract, ());
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
     let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #108)")] // AlreadyInitialized
-fn test_initialize_twice_fails() {
-    let env = Env::default();
-    env.ledger().set_protocol_version(25);
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let contract_id = env.register(LockupContract, ());
-    let client = LockupContractClient::new(&env, &contract_id);
-    client.initialize(&admin);
-    client.initialize(&admin);
+    client.set_admin(&admin);
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +503,7 @@ fn test_create_stream() {
     assert_eq!(stream.recipient, recipient);
     assert_eq!(stream.total_amount, total);
     assert_eq!(stream.withdrawn_amount, 0);
-    assert_eq!(stream.cancelable, true);
+    assert!(stream.cancelable);
 
     // Contract should hold the tokens
     assert_eq!(token_client.balance(&contract_id), total);
@@ -755,11 +1123,11 @@ fn test_renounce() {
     };
     let stream_id = client.create(&params);
 
-    assert_eq!(client.is_cancelable(&stream_id), true);
+    assert!(client.is_cancelable(&stream_id));
 
     client.renounce(&stream_id, &sender);
 
-    assert_eq!(client.is_cancelable(&stream_id), false);
+    assert!(!client.is_cancelable(&stream_id));
 }
 
 #[test]
@@ -813,8 +1181,8 @@ fn test_status_lifecycle() {
 
     // Before start: Pending (warm)
     assert_eq!(client.status_of(&stream_id), LockupStatus::Pending);
-    assert_eq!(client.is_warm(&stream_id), true);
-    assert_eq!(client.is_cold(&stream_id), false);
+    assert!(client.is_warm(&stream_id));
+    assert!(!client.is_cold(&stream_id));
 
     // During vesting: Streaming (warm)
     env.ledger().set(LedgerInfo {
@@ -828,7 +1196,7 @@ fn test_status_lifecycle() {
         max_entry_ttl: 10_000_000,
     });
     assert_eq!(client.status_of(&stream_id), LockupStatus::Streaming);
-    assert_eq!(client.is_warm(&stream_id), true);
+    assert!(client.is_warm(&stream_id));
 
     // After end: Settled (cold)
     env.ledger().set(LedgerInfo {
@@ -842,12 +1210,12 @@ fn test_status_lifecycle() {
         max_entry_ttl: 10_000_000,
     });
     assert_eq!(client.status_of(&stream_id), LockupStatus::Settled);
-    assert_eq!(client.is_cold(&stream_id), true);
+    assert!(client.is_cold(&stream_id));
 
     // Withdraw all: Depleted (cold)
     client.withdraw_max(&stream_id, &recipient, &recipient);
     assert_eq!(client.status_of(&stream_id), LockupStatus::Depleted);
-    assert_eq!(client.is_cold(&stream_id), true);
+    assert!(client.is_cold(&stream_id));
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,4 +1368,128 @@ fn test_create_invalid_time_range() {
         cancelable: true,
     };
     client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_negative_start_unlock_amount() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: -ONE_TOKEN,
+        cliff_unlock_amount: 10 * ONE_TOKEN,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_negative_cliff_offset_attack() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: 150 * ONE_TOKEN,
+        cliff_unlock_amount: -100 * ONE_TOKEN,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // InvalidUnlockAmount
+fn test_create_rejects_unlock_sum_overflow() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender,
+        recipient,
+        token,
+        total_amount: i128::MAX,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: i128::MAX,
+        cliff_unlock_amount: 1,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+fn test_failed_and_non_standard_token_calls_roll_back_lockup_state() {
+    let env = Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    });
+    env.ledger().set_protocol_version(25);
+    env.ledger().set_timestamp(1_000);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token = env.register(AdversarialToken, ());
+    let adversarial = AdversarialTokenClient::new(&env, &token);
+    adversarial.mint(&sender, &(1_000 * ONE_TOKEN));
+    let contract_id = env.register(LockupContract, LockupContractArgs::__constructor(&admin));
+    let client = LockupContractClient::new(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1_000,
+        end_time: 1_100,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client.try_create(&params).is_err());
+        assert!(client.try_get_stream(&1).is_err());
+        assert_eq!(adversarial.balance(&sender), 1_000 * ONE_TOKEN);
+        assert_eq!(adversarial.balance(&contract_id), 0);
+    }
+
+    adversarial.set_mode(&0);
+    let stream_id = client.create(&params);
+    assert_eq!(stream_id, 1);
+    env.ledger().set_timestamp(1_050);
+
+    for mode in [1_u32, 2, 3] {
+        adversarial.set_mode(&mode);
+        assert!(client
+            .try_withdraw(&stream_id, &recipient, &recipient, &(10 * ONE_TOKEN))
+            .is_err());
+        let stream = client.get_stream(&stream_id);
+        assert_eq!(stream.withdrawn_amount, 0);
+        assert_eq!(stream.refunded_amount, 0);
+        assert_eq!(adversarial.balance(&recipient), 0);
+
+        assert!(client.try_cancel(&stream_id, &sender).is_err());
+        let stream = client.get_stream(&stream_id);
+        assert!(!stream.was_canceled);
+        assert_eq!(stream.refunded_amount, 0);
+        assert_eq!(adversarial.balance(&contract_id), 100 * ONE_TOKEN);
+    }
 }

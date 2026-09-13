@@ -16,21 +16,12 @@ echo "Using Fee Token Address: $FEE_TOKEN"
 
 # 1. Deploy the contract
 echo "Deploying paymaster contract..."
-PAYMASTER_ID=$(stellar contract deploy --wasm target/wasm32v1-none/release/paymaster.wasm --source $SOURCE --network $NETWORK)
+PAYMASTER_ID=$(stellar contract deploy --wasm target/wasm32v1-none/release/paymaster.wasm --source "$SOURCE" --network "$NETWORK" -- \
+  --admin "$ADMIN" \
+  --allowed_fee_tokens "[\"$FEE_TOKEN\"]")
 echo "Paymaster deployed at: $PAYMASTER_ID"
 
-# 2. Initialize the contract
-echo "Initializing paymaster contract..."
-stellar contract invoke \
-  --id $PAYMASTER_ID \
-  --source $SOURCE \
-  --network $NETWORK \
-  -- \
-  initialize \
-  --admin $ADMIN \
-  --allowed_fee_tokens "[\"$FEE_TOKEN\"]"
-
-echo "Paymaster contract deployed and initialized successfully!"
+echo "Paymaster contract deployed and initialized atomically!"
 
 # 3. Update deployed_contracts.json if it exists
 if [ -f "deployed_contracts.json" ]; then

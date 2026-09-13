@@ -24,6 +24,55 @@ use shared::events;
 use shared::types::{CreateLockupParams, LockupStream};
 use soroban_sdk::{panic_with_error, token, Address, Env};
 
+/// Transfer tokens and require exact sender debit and recipient credit.
+/// Mismatches panic and atomically roll back the enclosing Soroban call.
+fn transfer_exact(env: &Env, token_addr: &Address, from: &Address, to: &Address, amount: i128) {
+    if from == to {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+
+    let token_client = token::Client::new(env, token_addr);
+    let from_before = token_client.balance(from);
+    let to_before = token_client.balance(to);
+    token_client.transfer(from, to, &amount);
+    let from_after = token_client.balance(from);
+    let to_after = token_client.balance(to);
+
+    if from_before.checked_sub(from_after) != Some(amount)
+        || to_after.checked_sub(to_before) != Some(amount)
+    {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+}
+
+/// Transfer tokens using the allowance granted to this Lockup contract and
+/// require exact sender debit and recipient credit.
+fn transfer_from_allowance_exact(
+    env: &Env,
+    token_addr: &Address,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) {
+    if from == to {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+
+    let token_client = token::Client::new(env, token_addr);
+    let spender = env.current_contract_address();
+    let from_before = token_client.balance(from);
+    let to_before = token_client.balance(to);
+    token_client.transfer_from(&spender, from, to, &amount);
+    let from_after = token_client.balance(from);
+    let to_after = token_client.balance(to);
+
+    if from_before.checked_sub(from_after) != Some(amount)
+        || to_after.checked_sub(to_before) != Some(amount)
+    {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Read-only vesting calculations
 // ---------------------------------------------------------------------------
@@ -140,6 +189,17 @@ pub fn refundable_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 /// Validates inputs, transfers tokens from sender to the contract, stores the
 /// stream record, and emits the creation event.
 pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
+    create_with_funding(env, params, false)
+}
+
+/// Create a Lockup stream using a pre-existing sender allowance granted to
+/// this contract. The public entry point restricts this path to the trusted
+/// Router, so arbitrary callers cannot consume a user's allowance.
+pub fn create_from_allowance(env: &Env, params: &CreateLockupParams) -> u64 {
+    create_with_funding(env, params, true)
+}
+
+fn create_with_funding(env: &Env, params: &CreateLockupParams, use_allowance: bool) -> u64 {
     // Validate: sender and recipient must differ (H-1)
     if params.sender == params.recipient {
         panic_with_error!(env, LockupError::SenderEqualsRecipient);
@@ -162,10 +222,18 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
         panic_with_error!(env, LockupError::InvalidTimeRange);
     }
 
-    // Validate: unlock amounts don't exceed total
-    let unlock_sum = params.start_unlock_amount + params.cliff_unlock_amount;
+    // Validate: unlock amounts are nonnegative and don't exceed total.
+    // Negative values can offset a positive value here and later corrupt
+    // vested/refundable accounting in the pooled token balance.
+    if params.start_unlock_amount < 0 || params.cliff_unlock_amount < 0 {
+        panic_with_error!(env, LockupError::InvalidUnlockAmount);
+    }
+    let unlock_sum = params
+        .start_unlock_amount
+        .checked_add(params.cliff_unlock_amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::InvalidUnlockAmount));
     if unlock_sum > params.total_amount {
-        panic_with_error!(env, LockupError::AmountZero);
+        panic_with_error!(env, LockupError::InvalidUnlockAmount);
     }
 
     // Validate: granularity must be > 0, default to 1
@@ -209,12 +277,23 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     );
 
     // Transfer tokens from sender into the contract (fully pre-funded)
-    let token_client = token::Client::new(env, &params.token);
-    token_client.transfer(
-        &params.sender,
-        &env.current_contract_address(),
-        &params.total_amount,
-    );
+    if use_allowance {
+        transfer_from_allowance_exact(
+            env,
+            &params.token,
+            &params.sender,
+            &env.current_contract_address(),
+            params.total_amount,
+        );
+    } else {
+        transfer_exact(
+            env,
+            &params.token,
+            &params.sender,
+            &env.current_contract_address(),
+            params.total_amount,
+        );
+    }
 
     // Emit event
     events::emit_lockup_created(
@@ -284,8 +363,13 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     );
 
     // Transfer tokens to recipient
-    let token_client = token::Client::new(env, &token_addr);
-    token_client.transfer(&env.current_contract_address(), to, &amount);
+    transfer_exact(
+        env,
+        &token_addr,
+        &env.current_contract_address(),
+        to,
+        amount,
+    );
 
     events::emit_lockup_withdraw(env, stream_id, to, caller, amount);
 }
@@ -351,8 +435,13 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
 
     // Refund unvested tokens to sender
     if sender_amount > 0 {
-        let token_client = token::Client::new(env, &token_addr);
-        token_client.transfer(&env.current_contract_address(), &sender, &sender_amount);
+        transfer_exact(
+            env,
+            &token_addr,
+            &env.current_contract_address(),
+            &sender,
+            sender_amount,
+        );
     }
 
     events::emit_lockup_canceled(
