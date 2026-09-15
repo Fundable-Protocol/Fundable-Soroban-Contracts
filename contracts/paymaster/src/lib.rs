@@ -63,10 +63,16 @@ impl PaymasterContract {
     ///
     /// # Errors
     /// * `PaymasterError::AlreadyInitialized` — if called more than once.
+    ///
+    /// # Security
+    /// The intended admin must authorize the initialization.
     pub fn initialize(env: Env, admin: Address, allowed_fee_tokens: Vec<Address>) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, PaymasterError::AlreadyInitialized);
         }
+
+        // Require admin authorization BEFORE writing any state.
+        admin.require_auth();
 
         env.storage().instance().set(&DataKey::Admin, &admin);
 
@@ -158,6 +164,12 @@ impl PaymasterContract {
     ///
     /// This wraps `forward()` with a simplified interface where the relayer
     /// address is the fee recipient and fee_amount == max_fee.
+    ///
+    /// # Note on Expiration
+    ///
+    /// This wrapper sets the expiration to `current_ledger + 1000` (~83 minutes
+    /// at ~5 sec/ledger). This is NOT "no expiration" — it is a generous but
+    /// finite window. For indefinite authorization, use `forward()` directly.
     pub fn collect_fee_and_invoke(
         env: Env,
         user: Address,
@@ -168,8 +180,13 @@ impl PaymasterContract {
         function_name: Symbol,
         args: Vec<Val>,
     ) -> Val {
-        // Use max ledger for expiration (backwards compat - no expiration)
-        let expiration_ledger = env.ledger().sequence() + 1000;
+        // Expiration: current_ledger + 1000 (~83 minutes).
+        // Uses checked_add to prevent overflow.
+        let expiration_ledger = env
+            .ledger()
+            .sequence()
+            .checked_add(1000)
+            .unwrap_or(u32::MAX);
 
         Self::forward(
             env,

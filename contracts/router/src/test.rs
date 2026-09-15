@@ -454,7 +454,7 @@ fn test_upgrade() {
 
     // Check that admin authorization was requested
     let auths = env.auths();
-    assert!(auths.len() > 0);
+    assert!(!auths.is_empty());
     assert_eq!(auths[0].0, admin);
 }
 
@@ -487,6 +487,6 @@ fn test_upgrade_nft() {
 
     // Check that admin authorization was requested
     let auths = env.auths();
-    assert!(auths.len() > 0);
+    assert!(!auths.is_empty());
     assert_eq!(auths[0].0, admin);
 }

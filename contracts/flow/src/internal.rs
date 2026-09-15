@@ -16,6 +16,12 @@
 //! - **Snapshot pattern**: Before any rate change (adjust, pause, restart),
 //!   we "snapshot" the ongoing debt into `snapshot_debt_scaled` and update
 //!   `snapshot_time` to the current timestamp. This freezes historical debt.
+//!
+//! # Security
+//!
+//! - All arithmetic on user-influenced values uses checked operations.
+//! - Token decimals are validated against the token contract.
+//! - Exact-transfer validation ensures no accounting mismatch.
 
 use crate::storage;
 use shared::errors::FlowError;
@@ -49,7 +55,7 @@ pub fn ongoing_debt_scaled_of(env: &Env, stream: &FlowStream) -> i128 {
     // ongoing_debt = elapsed_seconds × rate_per_second (both in 18-dec)
     elapsed
         .checked_mul(stream.rate_per_second)
-        .expect("ongoing debt overflow")
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError))
 }
 
 /// Calculate the total debt (snapshot + ongoing), in token decimals.
@@ -59,7 +65,7 @@ pub fn ongoing_debt_scaled_of(env: &Env, stream: &FlowStream) -> i128 {
 pub fn total_debt_of(env: &Env, stream: &FlowStream) -> i128 {
     let total_scaled = ongoing_debt_scaled_of(env, stream)
         .checked_add(stream.snapshot_debt_scaled)
-        .expect("total debt overflow");
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
     math::descale_amount(total_scaled, stream.token_decimals)
 }
 
@@ -98,7 +104,8 @@ pub fn uncovered_debt_of(env: &Env, stream: &FlowStream) -> i128 {
 ///
 /// `refundable = balance - covered_debt`
 pub fn refundable_amount_of(env: &Env, stream: &FlowStream) -> i128 {
-    stream.balance - covered_debt_of(env, stream)
+    let covered = covered_debt_of(env, stream);
+    stream.balance.checked_sub(covered).unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +130,14 @@ pub fn create(
         panic_with_error!(env, FlowError::InvalidTokenDecimals);
     }
 
+    // Validate decimals against token contract.
+    // Read the token's actual decimal count and compare with caller-supplied value.
+    let token_client = token::Client::new(env, token);
+    let actual_decimals = token_client.decimals();
+    if actual_decimals != token_decimals {
+        panic_with_error!(env, FlowError::TokenDecimalsMismatch);
+    }
+
     // Validate: sender and recipient must differ (H-1)
     if sender == recipient {
         panic_with_error!(env, FlowError::SenderEqualsRecipient);
@@ -143,9 +158,12 @@ pub fn create(
     // Determine snapshot time: 0 sentinel → use current timestamp
     let snapshot_time = if start_time == 0 { now } else { start_time };
 
-    // Allocate stream ID
+    // Allocate stream ID (checked increment)
     let stream_id = storage::get_next_stream_id(env);
-    storage::set_next_stream_id(env, stream_id + 1);
+    let next_id = stream_id
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
+    storage::set_next_stream_id(env, next_id);
 
     // Build and store the stream
     let stream = FlowStream {
@@ -179,6 +197,8 @@ pub fn create(
 ///
 /// Transfers tokens from the caller into the contract, then updates
 /// the stream balance and aggregate accounting.
+///
+/// Validates exact transfer amount via balance-before/after checks.
 pub fn deposit(env: &Env, stream_id: u64, funder: &Address, amount: i128) {
     if amount <= 0 {
         panic_with_error!(env, FlowError::DepositAmountZero);
@@ -192,22 +212,35 @@ pub fn deposit(env: &Env, stream_id: u64, funder: &Address, amount: i128) {
         panic_with_error!(env, FlowError::StreamVoided);
     }
 
-    // Transfer tokens from funder to this contract
+    // Exact-transfer validation
     let token_client = token::Client::new(env, &stream.token);
-    token_client.transfer(funder, &env.current_contract_address(), &amount);
+    let contract_addr = env.current_contract_address();
+    let balance_before = token_client.balance(&contract_addr);
 
-    // Update stream balance
+    // Transfer tokens from funder to this contract
+    token_client.transfer(funder, &contract_addr, &amount);
+
+    let balance_after = token_client.balance(&contract_addr);
+    let received = balance_after
+        .checked_sub(balance_before)
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
+    if received != amount {
+        panic_with_error!(env, FlowError::TokenTransferMismatch);
+    }
+
+    // Update stream balance (checked)
     stream.balance = stream
         .balance
         .checked_add(amount)
-        .expect("balance overflow");
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
 
     // Update aggregate balance for accounting
     let agg = storage::get_aggregate_balance(env, &stream.token);
     storage::set_aggregate_balance(
         env,
         &stream.token,
-        agg.checked_add(amount).expect("aggregate overflow"),
+        agg.checked_add(amount)
+            .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError)),
     );
 
     storage::set_stream(env, stream_id, &stream);
@@ -244,34 +277,40 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     // Update debt tracking
     let total_debt_scaled = ongoing_debt_scaled_of(env, &stream)
         .checked_add(stream.snapshot_debt_scaled)
-        .expect("debt overflow");
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
 
     if amount_scaled <= stream.snapshot_debt_scaled {
         // Withdrawal fits entirely within snapshot debt
-        stream.snapshot_debt_scaled -= amount_scaled;
+        stream.snapshot_debt_scaled = stream
+            .snapshot_debt_scaled
+            .checked_sub(amount_scaled)
+            .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
     } else {
         // Withdrawal exceeds snapshot debt — adjust ongoing debt too
-        stream.snapshot_debt_scaled = total_debt_scaled - amount_scaled;
+        stream.snapshot_debt_scaled = total_debt_scaled
+            .checked_sub(amount_scaled)
+            .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
         stream.snapshot_time = env.ledger().timestamp();
     }
 
-    // Update stream balance
-    stream.balance -= amount;
+    // Update stream balance (checked)
+    stream.balance = stream
+        .balance
+        .checked_sub(amount)
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
 
-    // Update aggregate balance (L-6: descriptive error)
+    // Update aggregate balance (checked)
     let agg = storage::get_aggregate_balance(env, &stream.token);
     storage::set_aggregate_balance(
         env,
         &stream.token,
         agg.checked_sub(amount)
-            .expect("aggregate balance underflow on withdraw"),
+            .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError)),
     );
 
     storage::set_stream(env, stream_id, &stream);
 
-    // Transfer tokens to recipient (SKILL.md §5: transfer-before-state-update
-    // not needed here since Soroban doesn't have reentrancy, but we update
-    // state first by convention)
+    // Transfer tokens to recipient
     let token_client = token::Client::new(env, &stream.token);
     token_client.transfer(&env.current_contract_address(), to, &amount);
 
@@ -302,7 +341,7 @@ pub fn adjust_rate(env: &Env, stream_id: u64, new_rate: i128) {
             stream.snapshot_debt_scaled = stream
                 .snapshot_debt_scaled
                 .checked_add(ongoing)
-                .expect("snapshot overflow");
+                .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
         }
         stream.snapshot_time = now;
     }
@@ -405,16 +444,19 @@ pub fn refund(env: &Env, stream_id: u64, amount: i128) {
     let sender = stream.sender.clone();
     let token_addr = stream.token.clone();
 
-    // Update balance
-    stream.balance -= amount;
+    // Update balance (checked)
+    stream.balance = stream
+        .balance
+        .checked_sub(amount)
+        .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
 
-    // Update aggregate (L-6: descriptive error)
+    // Update aggregate (checked)
     let agg = storage::get_aggregate_balance(env, &token_addr);
     storage::set_aggregate_balance(
         env,
         &token_addr,
         agg.checked_sub(amount)
-            .expect("aggregate balance underflow on refund"),
+            .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError)),
     );
 
     storage::set_stream(env, stream_id, &stream);
@@ -455,7 +497,7 @@ pub fn void_stream(env: &Env, stream_id: u64, caller: &Address) {
             stream.snapshot_debt_scaled = stream
                 .snapshot_debt_scaled
                 .checked_add(ongoing)
-                .expect("snapshot overflow");
+                .unwrap_or_else(|| panic_with_error!(env, FlowError::ArithmeticError));
         }
     } else {
         // Insolvent: write off uncovered debt by capping snapshot to balance

@@ -1,7 +1,10 @@
 #![no_std]
 
 use shared::errors::RouterError;
-use shared::storage::{DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD};
+use shared::events;
+use shared::storage::{
+    DataKey, INSTANCE_TTL_LEDGERS, INSTANCE_TTL_THRESHOLD, UPGRADE_TIMELOCK_LEDGERS,
+};
 use shared::types::CreateLockupParams;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
 
@@ -23,6 +26,9 @@ pub struct RouterContract;
 #[contractimpl]
 impl RouterContract {
     /// Initialize the Router with the addresses of the core contracts.
+    ///
+    /// The intended admin must authorize the initialization to prevent
+    /// first-caller takeover attacks.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -33,6 +39,9 @@ impl RouterContract {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, RouterError::AlreadyInitialized);
         }
+
+        // Require admin authorization BEFORE writing any state.
+        admin.require_auth();
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
@@ -51,16 +60,121 @@ impl RouterContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        events::emit_router_initialized(
+            &env,
+            &admin,
+            &flow_contract,
+            &lockup_contract,
+            &nft_contract,
+        );
     }
 
     /// Admin can upgrade the router logic.
     pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
+    }
+
+    /// Propose a timelocked upgrade.
+    pub fn propose_upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let unlock_ledger = env
+            .ledger()
+            .sequence()
+            .checked_add(UPGRADE_TIMELOCK_LEDGERS)
+            .unwrap_or_else(|| panic_with_error!(&env, RouterError::NotInitialized));
+
+        env.storage()
+            .instance()
+            .set(&DataKey::UpgradeUnlockLedger, &unlock_ledger);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedUpgrade(new_wasm_hash.clone()), &true);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        events::emit_upgrade_proposed(&env, &admin, &new_wasm_hash, unlock_ledger);
+    }
+
+    /// Execute a previously proposed upgrade after the timelock.
+    pub fn execute_upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        let proposed: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedUpgrade(new_wasm_hash.clone()))
+            .unwrap_or(false);
+        if !proposed {
+            panic_with_error!(&env, RouterError::NotInitialized);
+        }
+
+        let unlock_ledger: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeUnlockLedger)
+            .unwrap_or_else(|| panic_with_error!(&env, RouterError::NotInitialized));
+
+        if env.ledger().sequence() < unlock_ledger {
+            panic_with_error!(&env, RouterError::NotAuthorized);
+        }
+
+        env.storage()
+            .instance()
+            .remove(&DataKey::ProposedUpgrade(new_wasm_hash.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::UpgradeUnlockLedger);
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
+    }
+
+    /// Propose a new admin (two-step transfer).
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        events::emit_admin_proposed(&env, &admin, &new_admin);
+    }
+
+    /// Accept an admin transfer.
+    pub fn accept_admin(env: Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, RouterError::NotAuthorized));
+        pending.require_auth();
+
+        let old_admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        env.storage().instance().set(&DataKey::Admin, &pending);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.storage()
+            .instance()
+            .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+        events::emit_admin_accepted(&env, &old_admin, &pending);
     }
 
     /// Admin can upgrade the NFT contract logic.

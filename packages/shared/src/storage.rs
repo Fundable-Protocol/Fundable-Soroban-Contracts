@@ -6,7 +6,7 @@
 //! - Typed enum keys to avoid collisions between modules.
 //! - Explicit TTL extension to prevent state archival.
 
-use soroban_sdk::{contracttype, Address};
+use soroban_sdk::{contracttype, Address, BytesN};
 
 // ---------------------------------------------------------------------------
 // Storage Keys
@@ -46,6 +46,12 @@ pub enum DataKey {
     NftContract,
     /// Paymaster configuration: list of allowed fee token addresses.
     AllowedFeeTokens,
+    /// Pending admin address for two-step admin transfer (Instance storage).
+    PendingAdmin,
+    /// Proposed upgrade WASM hash (Instance storage).
+    ProposedUpgrade(BytesN<32>),
+    /// Ledger sequence at which a proposed upgrade becomes executable (Instance storage).
+    UpgradeUnlockLedger,
 }
 
 // ---------------------------------------------------------------------------
@@ -53,18 +59,24 @@ pub enum DataKey {
 // ---------------------------------------------------------------------------
 
 /// TTL for instance storage entries (admin, config).
-/// ~30 days at ~5 sec/ledger = 518_400 ledgers.
-pub const INSTANCE_TTL_LEDGERS: u32 = 518_400;
+/// ~90 days at ~5 sec/ledger = 1_555_200 ledgers.
+pub const INSTANCE_TTL_LEDGERS: u32 = 1_555_200;
 
 /// TTL threshold — extend when remaining TTL drops below this.
-/// ~7 days = 120_960 ledgers.
-pub const INSTANCE_TTL_THRESHOLD: u32 = 120_960;
+/// ~30 days = 518_400 ledgers.
+pub const INSTANCE_TTL_THRESHOLD: u32 = 518_400;
 
 /// TTL for persistent storage entries (stream records).
-/// ~120 days at ~5 sec/ledger = 2_073_600 ledgers.
-/// Streams can be long-lived, so we use a generous TTL.
-pub const PERSISTENT_TTL_LEDGERS: u32 = 2_073_600;
+/// ~365 days at ~5 sec/ledger = 6_312_000 ledgers.
+/// Streams can be long-lived (multi-year lockups), so we use the
+/// maximum practical TTL. The `extend_stream_ttl()` keepalive
+/// covers durations beyond 1 year.
+pub const PERSISTENT_TTL_LEDGERS: u32 = 6_312_000;
 
 /// Threshold to trigger persistent TTL extension.
-/// ~30 days = 518_400 ledgers.
-pub const PERSISTENT_TTL_THRESHOLD: u32 = 518_400;
+/// ~120 days = 2_073_600 ledgers.
+pub const PERSISTENT_TTL_THRESHOLD: u32 = 2_073_600;
+
+/// Upgrade timelock: number of ledgers to wait between proposing and
+/// executing an upgrade. ~24 hours at ~5 sec/ledger = 17_280 ledgers.
+pub const UPGRADE_TIMELOCK_LEDGERS: u32 = 17_280;

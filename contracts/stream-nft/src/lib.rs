@@ -14,7 +14,9 @@ pub struct StreamNftContract;
 
 #[contractimpl]
 impl StreamNftContract {
-    /// Initialize the NFT contract.
+    /// Initialize the NFT contract with the Router contract address as admin.
+    ///
+    /// Note: admin is the Router contract address, which cannot authorize off-chain transactions.
     pub fn initialize(env: Env, admin: Address, name: String, symbol: String) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(&env, NftError::AlreadyInitialized);
@@ -32,6 +34,8 @@ impl StreamNftContract {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_LEDGERS);
+
+        shared::events::emit_admin_initialized(&env, &admin);
     }
 
     /// Admin can upgrade the contract logic.

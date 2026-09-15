@@ -303,7 +303,9 @@ fn test_forward_rejects_disallowed_fee_token() {
     let client = PaymasterContractClient::new(&env, &contract_id);
     let target_id = env.register(target_contract::TargetContract, ());
     let token_admin = Address::generate(&env);
-    let disallowed_token = env.register_stellar_asset_contract_v2(token_admin).address();
+    let disallowed_token = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
     let args: Vec<Val> = Vec::new(&env);
 
     client.forward(

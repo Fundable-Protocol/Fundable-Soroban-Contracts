@@ -22,12 +22,16 @@
 //! - Checked arithmetic via workspace `overflow-checks = true` (SKILL.md §2).
 //! - Events emitted on every state change (SKILL.md §8).
 //! - TTL extended on every storage access (SKILL.md §3).
+//! - Negative unlock amounts are rejected to prevent pooled-escrow drain.
+//! - Two-step admin transfer prevents accidental transfer to unusable address.
+//! - Timelocked upgrades provide mainnet safety.
 
 #![no_std]
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
 use shared::errors::LockupError;
 use shared::events;
+use shared::storage::{DataKey, UPGRADE_TIMELOCK_LEDGERS};
 use shared::types::{CreateLockupParams, LockupStatus, LockupStream};
 
 mod internal;
@@ -41,10 +45,11 @@ pub struct LockupContract;
 /// Public API for the Fundable Lockup vesting contract.
 ///
 /// Functions are organized into:
-/// 1. **Admin** — initialize, upgrade, set_admin
+/// 1. **Admin** — initialize, upgrade, set_admin, propose_admin, accept_admin
 /// 2. **Create** — create (with timestamps and optional cliff)
 /// 3. **Mutate** — withdraw, cancel, renounce
 /// 4. **Query** — get_stream, status_of, withdrawable_amount_of, etc.
+/// 5. **Keepalive** — extend_stream_ttl
 #[contractimpl]
 impl LockupContract {
     // -----------------------------------------------------------------------
@@ -54,28 +59,115 @@ impl LockupContract {
     /// Initialize the contract with an admin address.
     ///
     /// Must be called exactly once before any other function.
+    /// The intended admin must authorize the initialization.
     pub fn initialize(env: Env, admin: Address) {
         if storage::has_admin(&env) {
             panic_with_error!(&env, LockupError::AlreadyInitialized);
         }
+        admin.require_auth();
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
         events::emit_admin_initialized(&env, &admin);
     }
 
-    /// Upgrade the contract WASM bytecode.
-    ///
-    /// Admin-only.
+    /// Propose a timelocked upgrade.
+    pub fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+
+        let unlock_ledger = env
+            .ledger()
+            .sequence()
+            .checked_add(UPGRADE_TIMELOCK_LEDGERS)
+            .unwrap_or_else(|| panic_with_error!(&env, LockupError::ArithmeticError));
+
+        env.storage()
+            .instance()
+            .set(&DataKey::UpgradeUnlockLedger, &unlock_ledger);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedUpgrade(new_wasm_hash.clone()), &true);
+        storage::extend_instance_ttl(&env);
+
+        events::emit_upgrade_proposed(&env, &admin, &new_wasm_hash, unlock_ledger);
+    }
+
+    /// Execute a previously proposed upgrade after the timelock has expired.
+    pub fn execute_upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+
+        let proposed: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedUpgrade(new_wasm_hash.clone()))
+            .unwrap_or(false);
+        if !proposed {
+            panic_with_error!(&env, LockupError::NoUpgradeProposed);
+        }
+
+        let unlock_ledger: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeUnlockLedger)
+            .unwrap_or_else(|| panic_with_error!(&env, LockupError::NoUpgradeProposed));
+
+        if env.ledger().sequence() < unlock_ledger {
+            panic_with_error!(&env, LockupError::UpgradeTimelocked);
+        }
+
+        env.storage()
+            .instance()
+            .remove(&DataKey::ProposedUpgrade(new_wasm_hash.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::UpgradeUnlockLedger);
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        storage::extend_instance_ttl(&env);
+
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
+    }
+
+    /// Emergency upgrade — bypasses timelock.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let admin = storage::get_admin(&env);
         admin.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
         storage::extend_instance_ttl(&env);
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
     }
 
-    /// Transfer admin rights to a new address.
-    ///
-    /// Admin-only.
+    /// Propose a new admin (two-step transfer, step 1).
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        storage::extend_instance_ttl(&env);
+        events::emit_admin_proposed(&env, &admin, &new_admin);
+    }
+
+    /// Accept an admin transfer (two-step transfer, step 2).
+    pub fn accept_admin(env: Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, LockupError::NoAdminTransferPending));
+        pending.require_auth();
+
+        let old_admin = storage::get_admin(&env);
+        storage::set_admin(&env, &pending);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        storage::extend_instance_ttl(&env);
+        events::emit_admin_accepted(&env, &old_admin, &pending);
+    }
+
+    /// Direct admin transfer (legacy, kept for backwards compatibility).
     pub fn set_admin(env: Env, new_admin: Address) {
         let admin = storage::get_admin(&env);
         admin.require_auth();
@@ -162,6 +254,18 @@ impl LockupContract {
         }
 
         internal::renounce(&env, stream_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Keepalive
+    // -----------------------------------------------------------------------
+
+    /// Extend the TTL of a specific stream record.
+    ///
+    /// Anyone can call this to keep a long-duration stream alive.
+    pub fn extend_stream_ttl(env: Env, stream_id: u64) {
+        let _stream = queries::require_stream(&env, stream_id);
+        storage::extend_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------

@@ -202,3 +202,56 @@ pub fn emit_admin_transferred(env: &Env, old_admin: &Address, new_admin: &Addres
     env.events()
         .publish(topics, (old_admin.clone(), new_admin.clone()));
 }
+
+/// Emit when a new admin is proposed (two-step transfer).
+pub fn emit_admin_proposed(env: &Env, current_admin: &Address, proposed_admin: &Address) {
+    let topics = (Symbol::new(env, "admin_proposed"),);
+    env.events()
+        .publish(topics, (current_admin.clone(), proposed_admin.clone()));
+}
+
+/// Emit when a proposed admin accepts the transfer.
+pub fn emit_admin_accepted(env: &Env, old_admin: &Address, new_admin: &Address) {
+    let topics = (Symbol::new(env, "admin_accepted"),);
+    env.events()
+        .publish(topics, (old_admin.clone(), new_admin.clone()));
+}
+
+/// Emit when a contract upgrade is proposed (timelocked).
+pub fn emit_upgrade_proposed(
+    env: &Env,
+    admin: &Address,
+    wasm_hash: &soroban_sdk::BytesN<32>,
+    unlock_ledger: u32,
+) {
+    let topics = (Symbol::new(env, "upgrade_proposed"),);
+    env.events()
+        .publish(topics, (admin.clone(), wasm_hash.clone(), unlock_ledger));
+}
+
+/// Emit when a timelocked upgrade is executed.
+pub fn emit_upgrade_executed(env: &Env, admin: &Address, wasm_hash: &soroban_sdk::BytesN<32>) {
+    let topics = (Symbol::new(env, "upgrade_executed"),);
+    env.events()
+        .publish(topics, (admin.clone(), wasm_hash.clone()));
+}
+
+/// Emit when Router is initialized with contract addresses.
+pub fn emit_router_initialized(
+    env: &Env,
+    admin: &Address,
+    flow_contract: &Address,
+    lockup_contract: &Address,
+    nft_contract: &Address,
+) {
+    let topics = (Symbol::new(env, "router_initialized"),);
+    env.events().publish(
+        topics,
+        (
+            admin.clone(),
+            flow_contract.clone(),
+            lockup_contract.clone(),
+            nft_contract.clone(),
+        ),
+    );
+}

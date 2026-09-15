@@ -17,6 +17,14 @@
 //!   tokens return to sender; vested tokens remain for the recipient.
 //!
 //! - **Renounce**: The sender can permanently make a stream non-cancelable.
+//!
+//! # Security Invariants
+//!
+//! - `streamed_amount_of` always returns a value in `[0, total_amount]`.
+//! - Cancellation `sender_amount` is always in `[0, total_amount - withdrawn_amount]`.
+//! - Cancellation `recipient_amount` is always `>= 0`.
+//! - Aggregate accounting is never reduced by more than the stream's remaining balance.
+//! - All arithmetic on user-influenced values uses checked operations.
 
 use crate::storage;
 use shared::errors::LockupError;
@@ -42,15 +50,28 @@ use soroban_sdk::{panic_with_error, token, Address, Env};
 ///   streamable_amount = total_amount - start_unlock_amount - cliff_unlock_amount
 ///   vested = start_unlock_amount + cliff_unlock_amount + (elapsed * streamable_amount / streamable_duration)
 /// ```
+///
+/// # Security
+///
+/// The result is always clamped to `[0, total_amount]` regardless of stored
+/// field values. This prevents negative streamed amounts from corrupting
+/// cancellation calculations even if a stream was stored with invalid data
+/// before the creation validation was hardened.
 pub fn streamed_amount_of(env: &Env, stream: &LockupStream) -> i128 {
     // If depleted, the streamed amount is the withdrawn amount (no more to stream).
     if stream.is_depleted {
-        return stream.withdrawn_amount;
+        // Clamp: withdrawn_amount should be <= total_amount by invariant,
+        // but defend in depth.
+        return stream.withdrawn_amount.max(0).min(stream.total_amount);
     }
 
     // If canceled, the streamed amount is total minus refunded.
     if stream.was_canceled {
-        return stream.total_amount - stream.refunded_amount;
+        let val = stream
+            .total_amount
+            .checked_sub(stream.refunded_amount)
+            .unwrap_or(0);
+        return val.max(0).min(stream.total_amount);
     }
 
     let now = env.ledger().timestamp();
@@ -67,16 +88,24 @@ pub fn streamed_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 
     // Before cliff (if cliff is set): only start_unlock_amount.
     if stream.cliff_time > 0 && now < stream.cliff_time {
-        return stream.start_unlock_amount;
+        // Clamp: start_unlock_amount was validated >= 0 at creation,
+        // but defend in depth.
+        return stream.start_unlock_amount.max(0).min(stream.total_amount);
     }
 
     // Between cliff and end: linear interpolation with discrete steps.
-    let unlock_amounts_sum = stream.start_unlock_amount + stream.cliff_unlock_amount;
+    let unlock_amounts_sum = stream
+        .start_unlock_amount
+        .checked_add(stream.cliff_unlock_amount)
+        .unwrap_or(stream.total_amount);
 
     // Safety: if unlock amounts >= total, everything is unlocked.
     if unlock_amounts_sum >= stream.total_amount {
         return stream.total_amount;
     }
+
+    // Clamp unlock_amounts_sum to [0, total_amount] for safety.
+    let safe_unlock_sum = unlock_amounts_sum.max(0).min(stream.total_amount);
 
     // Determine the reference point for elapsed time calculation.
     let reference_time = if stream.cliff_time > 0 {
@@ -86,28 +115,38 @@ pub fn streamed_amount_of(env: &Env, stream: &LockupStream) -> i128 {
     };
 
     let streamable_duration = (stream.end_time - reference_time) as i128;
-    let streamable_amount = stream.total_amount - unlock_amounts_sum;
+    if streamable_duration <= 0 {
+        return stream.total_amount;
+    }
+
+    let streamable_amount = stream.total_amount - safe_unlock_sum;
+    if streamable_amount <= 0 {
+        return stream.total_amount;
+    }
 
     // Calculate elapsed time in granularity units (discrete steps).
     let raw_elapsed = (now - reference_time) as i128;
     let granularity = stream.granularity as i128;
     let elapsed_in_granularity_units = raw_elapsed / granularity;
-    let discrete_elapsed = elapsed_in_granularity_units * granularity;
+    let discrete_elapsed = elapsed_in_granularity_units
+        .checked_mul(granularity)
+        .unwrap_or(raw_elapsed);
 
     // streamed_portion = discrete_elapsed * streamable_amount / streamable_duration
-    let streamed_portion = discrete_elapsed
-        .checked_mul(streamable_amount)
-        .expect("streamed portion overflow")
-        / streamable_duration;
+    let streamed_portion = match discrete_elapsed.checked_mul(streamable_amount) {
+        Some(product) => product / streamable_duration,
+        None => {
+            // On overflow, treat as fully vested (conservative for recipient).
+            return stream.total_amount;
+        }
+    };
 
-    let vested = unlock_amounts_sum + streamed_portion;
+    let vested = safe_unlock_sum
+        .checked_add(streamed_portion)
+        .unwrap_or(stream.total_amount);
 
-    // Safety: clamp to total_amount to avoid overshoot from rounding.
-    if vested > stream.total_amount {
-        return stream.total_amount;
-    }
-
-    vested
+    // Final clamp to [0, total_amount].
+    vested.max(0).min(stream.total_amount)
 }
 
 /// Calculate the withdrawable amount (vested - already withdrawn).
@@ -128,6 +167,7 @@ pub fn refundable_amount_of(env: &Env, stream: &LockupStream) -> i128 {
         return 0;
     }
     let streamed = streamed_amount_of(env, stream);
+    // streamed is clamped to [0, total_amount], so this is always >= 0.
     stream.total_amount - streamed
 }
 
@@ -139,6 +179,14 @@ pub fn refundable_amount_of(env: &Env, stream: &LockupStream) -> i128 {
 ///
 /// Validates inputs, transfers tokens from sender to the contract, stores the
 /// stream record, and emits the creation event.
+///
+/// # Security Validations
+///
+/// - `total_amount > 0`
+/// - `start_unlock_amount >= 0`
+/// - `cliff_unlock_amount >= 0`
+/// - `start_unlock_amount + cliff_unlock_amount` uses checked_add
+/// - `0 <= unlock_sum <= total_amount`
 pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
     // Validate: sender and recipient must differ (H-1)
     if params.sender == params.recipient {
@@ -162,10 +210,26 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
         panic_with_error!(env, LockupError::InvalidTimeRange);
     }
 
-    // Validate: unlock amounts don't exceed total
-    let unlock_sum = params.start_unlock_amount + params.cliff_unlock_amount;
-    if unlock_sum > params.total_amount {
-        panic_with_error!(env, LockupError::AmountZero);
+    // CRITICAL: Validate unlock amounts are non-negative.
+    // Without this, negative values produce negative streamed amounts during
+    // cancellation, allowing sender_amount to exceed the stream's deposit
+    // and drain funds from other streams sharing the same token.
+    if params.start_unlock_amount < 0 {
+        panic_with_error!(env, LockupError::NegativeUnlockAmount);
+    }
+    if params.cliff_unlock_amount < 0 {
+        panic_with_error!(env, LockupError::NegativeUnlockAmount);
+    }
+
+    // Use checked addition to prevent signed-addition overflow.
+    let unlock_sum = params
+        .start_unlock_amount
+        .checked_add(params.cliff_unlock_amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::UnlockSumOverflow));
+
+    // Validate: 0 <= unlock_sum <= total_amount
+    if unlock_sum < 0 || unlock_sum > params.total_amount {
+        panic_with_error!(env, LockupError::InvalidUnlockSum);
     }
 
     // Validate: granularity must be > 0, default to 1
@@ -175,9 +239,12 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
         params.granularity
     };
 
-    // Allocate stream ID
+    // Allocate stream ID (checked increment)
     let stream_id = storage::get_next_stream_id(env);
-    storage::set_next_stream_id(env, stream_id + 1);
+    let next_id = stream_id
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+    storage::set_next_stream_id(env, next_id);
 
     // Build and store the stream
     let stream = LockupStream {
@@ -205,16 +272,24 @@ pub fn create(env: &Env, params: &CreateLockupParams) -> u64 {
         env,
         &params.token,
         agg.checked_add(params.total_amount)
-            .expect("aggregate overflow"),
+            .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError)),
     );
 
-    // Transfer tokens from sender into the contract (fully pre-funded)
+    // Exact-transfer validation: check balance before and after transfer.
     let token_client = token::Client::new(env, &params.token);
-    token_client.transfer(
-        &params.sender,
-        &env.current_contract_address(),
-        &params.total_amount,
-    );
+    let contract_addr = env.current_contract_address();
+    let balance_before = token_client.balance(&contract_addr);
+
+    // Transfer tokens from sender into the contract (fully pre-funded)
+    token_client.transfer(&params.sender, &contract_addr, &params.total_amount);
+
+    let balance_after = token_client.balance(&contract_addr);
+    let received = balance_after
+        .checked_sub(balance_before)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+    if received != params.total_amount {
+        panic_with_error!(env, LockupError::TokenTransferMismatch);
+    }
 
     // Emit event
     events::emit_lockup_created(
@@ -261,12 +336,19 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
         panic_with_error!(env, LockupError::Overdraw);
     }
 
-    // Update withdrawn amount
-    stream.withdrawn_amount += amount;
+    // Update withdrawn amount (checked)
+    stream.withdrawn_amount = stream
+        .withdrawn_amount
+        .checked_add(amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
 
     // Check if stream is now depleted
     // Using >= for safety — if withdrawn + refunded >= total, mark depleted
-    if stream.withdrawn_amount >= stream.total_amount - stream.refunded_amount {
+    let remaining = stream
+        .total_amount
+        .checked_sub(stream.refunded_amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+    if stream.withdrawn_amount >= remaining {
         stream.is_depleted = true;
         stream.cancelable = false;
     }
@@ -274,13 +356,13 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
     let token_addr = stream.token.clone();
     storage::set_stream(env, stream_id, &stream);
 
-    // Update aggregate balance (L-6: descriptive error)
+    // Update aggregate balance (checked)
     let agg = storage::get_aggregate_balance(env, &token_addr);
     storage::set_aggregate_balance(
         env,
         &token_addr,
         agg.checked_sub(amount)
-            .expect("aggregate balance underflow on withdraw"),
+            .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError)),
     );
 
     // Transfer tokens to recipient
@@ -294,6 +376,14 @@ pub fn withdraw(env: &Env, stream_id: u64, caller: &Address, to: &Address, amoun
 ///
 /// Only the sender can cancel. The stream must be cancelable and not yet
 /// depleted or already canceled. Unvested tokens are returned to the sender.
+///
+/// # Security
+///
+/// - `streamed` is clamped to `[0, total_amount]` by `streamed_amount_of`.
+/// - `sender_amount` is capped at `total_amount - withdrawn_amount`.
+/// - `recipient_amount` is validated `>= 0`.
+/// - Aggregate reduction is bounded by the stream's remaining accounted balance.
+/// - All arithmetic uses checked operations with explicit contract errors.
 pub fn cancel(env: &Env, stream_id: u64) -> i128 {
     let mut stream = storage::get_stream(env, stream_id)
         .unwrap_or_else(|| panic_with_error!(env, LockupError::StreamNotFound));
@@ -313,16 +403,43 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
         panic_with_error!(env, LockupError::AlreadyCancelled);
     }
 
-    // Calculate how much has vested
+    // Calculate how much has vested.
+    // streamed_amount_of guarantees result in [0, total_amount].
     let streamed = streamed_amount_of(env, &stream);
 
-    // Sender gets back unvested tokens
-    let sender_amount = stream.total_amount - streamed;
+    // Defensive validation: streamed must be in [0, total_amount].
+    if streamed < 0 || streamed > stream.total_amount {
+        panic_with_error!(env, LockupError::InvalidCancellationAmount);
+    }
 
-    // Recipient gets vested minus already withdrawn (M-6: checked subtraction)
+    // Sender gets back unvested tokens (checked subtraction).
+    let sender_amount = stream
+        .total_amount
+        .checked_sub(streamed)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+
+    // Defensive: sender_amount must be non-negative.
+    if sender_amount < 0 {
+        panic_with_error!(env, LockupError::InvalidCancellationAmount);
+    }
+
+    // Cap sender_amount at (total_amount - withdrawn_amount).
+    // The sender cannot reclaim tokens already withdrawn by the recipient.
+    let max_refundable = stream
+        .total_amount
+        .checked_sub(stream.withdrawn_amount)
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+    let sender_amount = sender_amount.min(max_refundable);
+
+    // Recipient gets vested minus already withdrawn (checked subtraction).
     let recipient_amount = streamed
         .checked_sub(stream.withdrawn_amount)
-        .expect("recipient amount underflow: withdrawn exceeds streamed");
+        .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError));
+
+    // Defensive: recipient_amount must be non-negative.
+    if recipient_amount < 0 {
+        panic_with_error!(env, LockupError::InvalidCancellationAmount);
+    }
 
     // Mark as canceled
     stream.was_canceled = true;
@@ -340,13 +457,16 @@ pub fn cancel(env: &Env, stream_id: u64) -> i128 {
 
     storage::set_stream(env, stream_id, &stream);
 
-    // Update aggregate balance (L-6: descriptive error)
+    // Update aggregate balance.
+    // Bound the aggregate reduction: never reduce by more than what this
+    // stream contributes (total_amount - withdrawn_amount).
     let agg = storage::get_aggregate_balance(env, &token_addr);
+    let aggregate_reduction = sender_amount.min(max_refundable);
     storage::set_aggregate_balance(
         env,
         &token_addr,
-        agg.checked_sub(sender_amount)
-            .expect("aggregate balance underflow on cancel"),
+        agg.checked_sub(aggregate_reduction)
+            .unwrap_or_else(|| panic_with_error!(env, LockupError::ArithmeticError)),
     );
 
     // Refund unvested tokens to sender

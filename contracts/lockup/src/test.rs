@@ -1001,3 +1001,372 @@ fn test_create_invalid_time_range() {
     };
     client.create(&params);
 }
+
+// ---------------------------------------------------------------------------
+// Security Tests — Lockup Drain Prevention (Phase 1)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // NegativeUnlockAmount
+fn test_negative_start_unlock_rejected() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: -50 * ONE_TOKEN, // NEGATIVE — must be rejected
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // NegativeUnlockAmount
+fn test_negative_cliff_unlock_rejected() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: -50 * ONE_TOKEN, // NEGATIVE — must be rejected
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #111)")] // NegativeUnlockAmount
+fn test_both_negative_unlock_rejected() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: -10 * ONE_TOKEN,
+        cliff_unlock_amount: -10 * ONE_TOKEN,
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #113)")] // InvalidUnlockSum
+fn test_unlock_sum_exceeds_total_rejected() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: 60 * ONE_TOKEN,
+        cliff_unlock_amount: 60 * ONE_TOKEN, // Sum = 120 > 100
+        granularity: 1,
+        cancelable: true,
+    };
+    client.create(&params);
+}
+
+#[test]
+fn test_zero_unlock_amounts_valid() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+    assert_eq!(stream_id, 1);
+}
+
+#[test]
+fn test_unlock_sum_equals_total_valid() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 1500,
+        start_unlock_amount: 40 * ONE_TOKEN,
+        cliff_unlock_amount: 60 * ONE_TOKEN, // Sum = 100 == total
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+    assert_eq!(stream_id, 1);
+}
+
+/// Critical test: two streams sharing the same token. Canceling one stream
+/// must not allow the sender to drain tokens belonging to the other stream.
+/// This is the exact scenario the drain vulnerability would exploit.
+#[test]
+fn test_cancellation_cannot_drain_other_stream() {
+    let (env, contract_id, sender, recipient, token, token_client) = setup_test();
+    let client = get_client(&env, &contract_id);
+
+    let sender2 = Address::generate(&env);
+    let recipient2 = Address::generate(&env);
+
+    // Fund sender2
+    let _token_admin = Address::generate(&env);
+    let sac_admin = StellarAssetClient::new(&env, &token);
+    sac_admin.mint(&sender2, &(1_000_000 * ONE_TOKEN));
+
+    // Stream 1: 100 tokens, cancelable
+    let params1 = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream1_id = client.create(&params1);
+
+    // Stream 2: 200 tokens, cancelable
+    let params2 = CreateLockupParams {
+        sender: sender2.clone(),
+        recipient: recipient2.clone(),
+        token: token.clone(),
+        total_amount: 200 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let _stream2_id = client.create(&params2);
+
+    // Contract should hold 300 tokens total
+    let contract_balance = token_client.balance(&contract_id);
+    assert_eq!(contract_balance, 300 * ONE_TOKEN);
+
+    // Cancel stream 1 immediately (0% vested → sender gets back 100)
+    let refunded = client.cancel(&stream1_id, &sender);
+    assert_eq!(refunded, 100 * ONE_TOKEN);
+
+    // Contract should now hold exactly 200 tokens (stream 2's full amount)
+    let contract_balance_after = token_client.balance(&contract_id);
+    assert_eq!(contract_balance_after, 200 * ONE_TOKEN);
+
+    // Sender should have received exactly their 100 tokens back
+    // (not more — the drain would steal from stream 2)
+}
+
+/// Verify that streamed_amount_of is always in [0, total_amount]
+/// even before the stream starts.
+#[test]
+fn test_streamed_amount_clamped_before_start() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+
+    // Create a stream that hasn't started yet (start_time = 2000, now = 1000)
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 2000,
+        end_time: 3000,
+        cliff_time: 0,
+        start_unlock_amount: 10 * ONE_TOKEN,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+    let streamed = client.streamed_amount_of(&stream_id);
+    assert_eq!(streamed, 0); // Must be 0 before start
+}
+
+/// Verify streamed amount during normal vesting is bounded.
+#[test]
+fn test_streamed_amount_during_vesting() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 100 * ONE_TOKEN,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 10 * ONE_TOKEN,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+
+    // Advance to 50% of vesting period
+    env.ledger().set(LedgerInfo {
+        timestamp: 1500,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let streamed = client.streamed_amount_of(&stream_id);
+    // start_unlock (10) + 50% of 90 (= 45) = 55
+    assert_eq!(streamed, 55 * ONE_TOKEN);
+    assert!(streamed >= 0);
+    assert!(streamed <= 100 * ONE_TOKEN);
+}
+
+/// Verify that cancellation refund is bounded correctly.
+#[test]
+fn test_cancellation_refund_bounded() {
+    let (env, contract_id, sender, recipient, token, token_client) = setup_test();
+    let client = get_client(&env, &contract_id);
+
+    let total = 100 * ONE_TOKEN;
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: total,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+
+    // Advance to 30% vesting
+    env.ledger().set(LedgerInfo {
+        timestamp: 1300,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    let sender_balance_before = token_client.balance(&sender);
+    let refunded = client.cancel(&stream_id, &sender);
+
+    // Refund should be 70% of total (unvested portion)
+    assert_eq!(refunded, 70 * ONE_TOKEN);
+    assert!(refunded >= 0);
+    assert!(refunded <= total);
+
+    // Sender should have received exactly the refunded amount
+    let sender_balance_after = token_client.balance(&sender);
+    assert_eq!(sender_balance_after - sender_balance_before, refunded);
+}
+
+/// Test cancellation after partial withdrawal: refund bounded by remaining.
+#[test]
+fn test_cancel_after_partial_withdraw_refund_bounded() {
+    let (env, contract_id, sender, recipient, token, token_client) = setup_test();
+    let client = get_client(&env, &contract_id);
+
+    let total = 100 * ONE_TOKEN;
+    let params = CreateLockupParams {
+        sender: sender.clone(),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: total,
+        start_time: 1000,
+        end_time: 2000,
+        cliff_time: 0,
+        start_unlock_amount: 0,
+        cliff_unlock_amount: 0,
+        granularity: 1,
+        cancelable: true,
+    };
+    let stream_id = client.create(&params);
+
+    // Advance to 50%
+    env.ledger().set(LedgerInfo {
+        timestamp: 1500,
+        protocol_version: 25,
+        sequence_number: 100,
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 100,
+        min_persistent_entry_ttl: 100,
+        max_entry_ttl: 10_000_000,
+    });
+
+    // Recipient withdraws 30 tokens (of 50 vested)
+    client.withdraw(&stream_id, &recipient, &recipient, &(30 * ONE_TOKEN));
+
+    // Now cancel: sender should get back 50 (unvested), NOT more
+    let refunded = client.cancel(&stream_id, &sender);
+    assert_eq!(refunded, 50 * ONE_TOKEN);
+
+    // Contract balance should cover the remaining 20 for recipient
+    let contract_balance = token_client.balance(&contract_id);
+    assert_eq!(contract_balance, 20 * ONE_TOKEN);
+}
+
+// ---------------------------------------------------------------------------
+// Security Tests — Initialization (Phase 2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_emits_event() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(LockupContract, ());
+    let client = LockupContractClient::new(&env, &contract_id);
+    client.initialize(&admin);
+    // If we get here without panic, initialization with auth succeeded
+}

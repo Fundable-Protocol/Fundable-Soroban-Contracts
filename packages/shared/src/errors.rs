@@ -4,6 +4,11 @@
 //!
 //! Soroban convention: error values are `u32` and should be stable across
 //! contract upgrades to avoid breaking client error handling.
+//!
+//! # Numbering Policy
+//!
+//! Error codes are **append-only**. Never renumber or remove existing codes.
+//! New codes are added at the end of each enum's numeric range.
 
 use soroban_sdk::contracterror;
 
@@ -72,10 +77,26 @@ pub enum FlowError {
     SenderEqualsRecipient = 20,
     /// Rate per second must not be negative.
     NegativeRate = 21,
+
+    // --- Security hardening (mainnet) ---
+    /// Token transfer resulted in a different balance change than requested.
+    TokenTransferMismatch = 22,
+    /// Caller-supplied token decimals do not match the token contract.
+    TokenDecimalsMismatch = 23,
+    /// Checked arithmetic operation failed (overflow/underflow).
+    ArithmeticError = 24,
+    /// Admin transfer already pending.
+    AdminTransferPending = 25,
+    /// No admin transfer pending to accept.
+    NoAdminTransferPending = 26,
+    /// Upgrade is timelocked and cannot be executed yet.
+    UpgradeTimelocked = 27,
+    /// No upgrade has been proposed.
+    NoUpgradeProposed = 28,
 }
 
 // ---------------------------------------------------------------------------
-// Lockup Contract Errors (stub for Phase 3)
+// Lockup Contract Errors
 // ---------------------------------------------------------------------------
 
 /// Errors emitted by the Lockup vesting contract.
@@ -102,6 +123,28 @@ pub enum LockupError {
     NotInitialized = 109,
     /// Sender and recipient must be different addresses.
     SenderEqualsRecipient = 110,
+
+    // --- Security hardening (mainnet) ---
+    /// start_unlock_amount or cliff_unlock_amount is negative.
+    NegativeUnlockAmount = 111,
+    /// Checked addition of unlock amounts overflowed.
+    UnlockSumOverflow = 112,
+    /// Unlock sum is not in the valid range [0, total_amount].
+    InvalidUnlockSum = 113,
+    /// Defensive cancellation amount validation failed.
+    InvalidCancellationAmount = 114,
+    /// Token transfer resulted in a different balance change than requested.
+    TokenTransferMismatch = 115,
+    /// Checked arithmetic operation failed (overflow/underflow).
+    ArithmeticError = 116,
+    /// Admin transfer already pending.
+    AdminTransferPending = 117,
+    /// No admin transfer pending to accept.
+    NoAdminTransferPending = 118,
+    /// Upgrade is timelocked and cannot be executed yet.
+    UpgradeTimelocked = 119,
+    /// No upgrade has been proposed.
+    NoUpgradeProposed = 120,
 }
 
 // ---------------------------------------------------------------------------
@@ -134,4 +177,6 @@ pub enum RouterError {
     NotInitialized = 302,
     NotAuthorized = 303,
     InvalidStreamType = 304,
+    /// A required contract address is invalid (zero/unset).
+    InvalidContractAddress = 305,
 }

@@ -1159,3 +1159,94 @@ fn test_depletion_time_calculation() {
     let dt = client.depletion_time_of(&stream_id);
     assert!(dt > 1000);
 }
+
+// ---------------------------------------------------------------------------
+// Security Tests — Token Decimals Validation (Phase 4)
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #23)")] // TokenDecimalsMismatch
+fn test_create_wrong_decimals_rejected() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    // Token has 7 decimals, but we pass 6
+    client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &6u32, // Wrong — token is 7 decimals
+        &0u64,
+    );
+}
+
+#[test]
+fn test_create_correct_decimals_accepted() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
+    assert_eq!(stream_id, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Security Tests — Initialization (Phase 2)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_initialize_with_auth_succeeds() {
+    let env = Env::default();
+    env.ledger().set_protocol_version(25);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let contract_id = env.register(FlowContract, ());
+    let client = FlowContractClient::new(&env, &contract_id);
+    client.initialize(&admin);
+    // If we get here without panic, initialization with auth works
+}
+
+// ---------------------------------------------------------------------------
+// Security Tests — Two-Step Admin Transfer (Phase 9)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_two_step_admin_transfer() {
+    let (env, contract_id, _, _, _, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    // This test uses mock_all_auths so all auth calls succeed.
+    // The important thing is the function flow works correctly.
+    client.set_admin(&admin); // Set initial admin
+    client.propose_admin(&new_admin);
+    client.accept_admin();
+    // After acceptance, new_admin should be the admin.
+    // Subsequent admin operations should work.
+}
+
+// ---------------------------------------------------------------------------
+// Security Tests — Keepalive (Phase 6)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extend_stream_ttl() {
+    let (env, contract_id, sender, recipient, token, _) = setup_test();
+    let client = get_client(&env, &contract_id);
+    let stream_id = client.create(
+        &sender,
+        &recipient,
+        &token,
+        &RATE_1_PER_SEC,
+        &TOKEN_DECIMALS,
+        &0u64,
+    );
+    // Anyone can extend TTL without modifying state
+    client.extend_stream_ttl(&stream_id);
+}

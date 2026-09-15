@@ -106,7 +106,7 @@
                         "symbol": "end_time"
                       },
                       "val": {
-                        "u64": "2000"
+                        "u64": "3000"
                       }
                     },
                     {
@@ -138,7 +138,7 @@
                         "symbol": "start_time"
                       },
                       "val": {
-                        "u64": "1000"
+                        "u64": "2000"
                       }
                     },
                     {
@@ -146,7 +146,7 @@
                         "symbol": "start_unlock_amount"
                       },
                       "val": {
-                        "i128": "0"
+                        "i128": "100000000"
                       }
                     },
                     {
@@ -195,60 +195,12 @@
         }
       ]
     ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-              "function_name": "cancel",
-              "args": [
-                {
-                  "u64": "1"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4",
-              "function_name": "withdraw_max",
-              "args": [
-                {
-                  "u64": "1"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [],
     []
   ],
   "ledger": {
     "protocol_version": 25,
-    "sequence_number": 140,
-    "timestamp": 1400,
+    "sequence_number": 100,
+    "timestamp": 1000,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 10,
     "min_persistent_entry_ttl": 100,
@@ -325,26 +277,6 @@
               "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
               "key": {
                 "ledger_key_nonce": {
-                  "nonce": "2032731177588607455"
-                }
-              },
-              "durability": "temporary",
-              "val": "void"
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 10000139
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-              "key": {
-                "ledger_key_nonce": {
                   "nonce": "4837995959683129791"
                 }
               },
@@ -355,26 +287,6 @@
           "ext": "v0"
         },
         "live_until": 10000099
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "key": {
-                "ledger_key_nonce": {
-                  "nonce": "4270020994084947596"
-                }
-              },
-              "durability": "temporary",
-              "val": "void"
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 10000139
       },
       {
         "entry": {
@@ -415,7 +327,7 @@
               },
               "durability": "persistent",
               "val": {
-                "i128": "0"
+                "i128": "1000000000"
               }
             }
           },
@@ -448,7 +360,7 @@
                       "symbol": "cancelable"
                     },
                     "val": {
-                      "bool": false
+                      "bool": true
                     }
                   },
                   {
@@ -472,7 +384,7 @@
                       "symbol": "end_time"
                     },
                     "val": {
-                      "u64": "2000"
+                      "u64": "3000"
                     }
                   },
                   {
@@ -488,7 +400,7 @@
                       "symbol": "is_depleted"
                     },
                     "val": {
-                      "bool": true
+                      "bool": false
                     }
                   },
                   {
@@ -504,7 +416,7 @@
                       "symbol": "refunded_amount"
                     },
                     "val": {
-                      "i128": "600000000"
+                      "i128": "0"
                     }
                   },
                   {
@@ -520,7 +432,7 @@
                       "symbol": "start_time"
                     },
                     "val": {
-                      "u64": "1000"
+                      "u64": "2000"
                     }
                   },
                   {
@@ -528,7 +440,7 @@
                       "symbol": "start_unlock_amount"
                     },
                     "val": {
-                      "i128": "0"
+                      "i128": "100000000"
                     }
                   },
                   {
@@ -552,7 +464,7 @@
                       "symbol": "was_canceled"
                     },
                     "val": {
-                      "bool": true
+                      "bool": false
                     }
                   },
                   {
@@ -560,7 +472,7 @@
                       "symbol": "withdrawn_amount"
                     },
                     "val": {
-                      "i128": "400000000"
+                      "i128": "0"
                     }
                   }
                 ]
@@ -644,7 +556,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "9999600000000"
+                      "i128": "9999000000000"
                     }
                   },
                   {
@@ -684,58 +596,6 @@
                     "symbol": "Balance"
                   },
                   {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "map": [
-                  {
-                    "key": {
-                      "symbol": "amount"
-                    },
-                    "val": {
-                      "i128": "400000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "authorized"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "clawback"
-                    },
-                    "val": {
-                      "bool": false
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 518540
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CDLDVFKHEZ2RVB3NG4UQA4VPD3TSHV6XMHXMHP2BSGCJ2IIWVTOHGDSG",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "Balance"
-                  },
-                  {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
                   }
                 ]
@@ -748,7 +608,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "0"
+                      "i128": "1000000000"
                     }
                   },
                   {

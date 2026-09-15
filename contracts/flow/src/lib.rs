@@ -21,12 +21,15 @@
 //! - 18-decimal internal precision for debt math (SKILL.md §2).
 //! - Events emitted on every state change (SKILL.md §8).
 //! - TTL extended on every storage access (SKILL.md §3).
+//! - Two-step admin transfer prevents accidental transfer to unusable address.
+//! - Timelocked upgrades provide mainnet safety with emergency override.
 
 #![no_std]
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
 use shared::errors::FlowError;
 use shared::events;
+use shared::storage::{DataKey, UPGRADE_TIMELOCK_LEDGERS};
 use shared::types::{FlowStream, StreamStatus};
 
 mod internal;
@@ -40,10 +43,11 @@ pub struct FlowContract;
 /// Public API for the Fundable Flow streaming contract.
 ///
 /// Functions are organized into:
-/// 1. **Admin** — initialize, upgrade, set_admin
+/// 1. **Admin** — initialize, upgrade, set_admin, propose_admin, accept_admin
 /// 2. **Create** — create, create_and_deposit
 /// 3. **Mutate** — deposit, withdraw, pause, restart, adjust_rate, refund, void
 /// 4. **Query** — get_stream, status_of, covered_debt_of, etc.
+/// 5. **Keepalive** — extend_stream_ttl
 #[contractimpl]
 impl FlowContract {
     // -----------------------------------------------------------------------
@@ -53,28 +57,136 @@ impl FlowContract {
     /// Initialize the contract with an admin address.
     ///
     /// Must be called exactly once before any other function.
+    /// The intended admin must authorize the initialization to prevent
+    /// first-caller takeover attacks.
     pub fn initialize(env: Env, admin: Address) {
         if storage::has_admin(&env) {
             panic_with_error!(&env, FlowError::AlreadyInitialized);
         }
+        // Require authorization from the intended admin BEFORE writing state.
+        admin.require_auth();
         storage::set_admin(&env, &admin);
         storage::extend_instance_ttl(&env);
         events::emit_admin_initialized(&env, &admin);
     }
 
-    /// Upgrade the contract WASM bytecode.
+    /// Propose a timelocked upgrade. The upgrade can be executed after
+    /// UPGRADE_TIMELOCK_LEDGERS have passed.
     ///
-    /// Admin-only. Per SKILL.md §7: admin-gated upgrades with event emission.
+    /// Admin-only.
+    pub fn propose_upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+
+        let unlock_ledger = env
+            .ledger()
+            .sequence()
+            .checked_add(UPGRADE_TIMELOCK_LEDGERS)
+            .unwrap_or_else(|| panic_with_error!(&env, FlowError::ArithmeticError));
+
+        env.storage()
+            .instance()
+            .set(&DataKey::UpgradeUnlockLedger, &unlock_ledger);
+        env.storage()
+            .instance()
+            .set(&DataKey::ProposedUpgrade(new_wasm_hash.clone()), &true);
+        storage::extend_instance_ttl(&env);
+
+        events::emit_upgrade_proposed(&env, &admin, &new_wasm_hash, unlock_ledger);
+    }
+
+    /// Execute a previously proposed upgrade after the timelock has expired.
+    ///
+    /// Admin-only.
+    pub fn execute_upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+
+        // Verify this hash was proposed
+        let proposed: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::ProposedUpgrade(new_wasm_hash.clone()))
+            .unwrap_or(false);
+        if !proposed {
+            panic_with_error!(&env, FlowError::NoUpgradeProposed);
+        }
+
+        // Verify timelock has expired
+        let unlock_ledger: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::UpgradeUnlockLedger)
+            .unwrap_or_else(|| panic_with_error!(&env, FlowError::NoUpgradeProposed));
+
+        if env.ledger().sequence() < unlock_ledger {
+            panic_with_error!(&env, FlowError::UpgradeTimelocked);
+        }
+
+        // Clean up proposal state
+        env.storage()
+            .instance()
+            .remove(&DataKey::ProposedUpgrade(new_wasm_hash.clone()));
+        env.storage()
+            .instance()
+            .remove(&DataKey::UpgradeUnlockLedger);
+
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
+        storage::extend_instance_ttl(&env);
+
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
+    }
+
+    /// Emergency upgrade — bypasses timelock. Use only in critical situations.
+    /// Emits an upgrade event for auditing.
+    ///
+    /// Admin-only. Consider removing this function after initial mainnet
+    /// stabilization, or requiring a separate emergency key.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         let admin = storage::get_admin(&env);
         admin.require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
         storage::extend_instance_ttl(&env);
+        events::emit_upgrade_executed(&env, &admin, &new_wasm_hash);
     }
 
-    /// Transfer admin rights to a new address.
+    /// Propose a new admin (two-step transfer, step 1).
     ///
+    /// The proposed admin must call `accept_admin()` to complete the transfer.
     /// Admin-only.
+    pub fn propose_admin(env: Env, new_admin: Address) {
+        let admin = storage::get_admin(&env);
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::PendingAdmin, &new_admin);
+        storage::extend_instance_ttl(&env);
+        events::emit_admin_proposed(&env, &admin, &new_admin);
+    }
+
+    /// Accept an admin transfer (two-step transfer, step 2).
+    ///
+    /// Must be called by the address that was proposed via `propose_admin()`.
+    pub fn accept_admin(env: Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or_else(|| panic_with_error!(&env, FlowError::NoAdminTransferPending));
+        pending.require_auth();
+
+        let old_admin = storage::get_admin(&env);
+        storage::set_admin(&env, &pending);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        storage::extend_instance_ttl(&env);
+        events::emit_admin_accepted(&env, &old_admin, &pending);
+    }
+
+    /// Direct admin transfer (legacy, kept for backwards compatibility).
+    ///
+    /// Admin-only. Prefer `propose_admin` + `accept_admin` for safety.
     pub fn set_admin(env: Env, new_admin: Address) {
         let admin = storage::get_admin(&env);
         admin.require_auth();
@@ -297,6 +409,20 @@ impl FlowContract {
         caller.require_auth();
         storage::extend_instance_ttl(&env);
         internal::void_stream(&env, stream_id, &caller);
+    }
+
+    // -----------------------------------------------------------------------
+    // Keepalive
+    // -----------------------------------------------------------------------
+
+    /// Extend the TTL of a specific stream record.
+    ///
+    /// Anyone can call this to keep a long-duration stream alive.
+    /// Does not modify stream state.
+    pub fn extend_stream_ttl(env: Env, stream_id: u64) {
+        // Reading the stream via get_stream already extends its TTL.
+        let _stream = queries::require_stream(&env, stream_id);
+        storage::extend_instance_ttl(&env);
     }
 
     // -----------------------------------------------------------------------
