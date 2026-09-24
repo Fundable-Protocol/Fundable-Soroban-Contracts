@@ -52,6 +52,17 @@ pub enum DataKey {
     ProposedUpgrade(BytesN<32>),
     /// Ledger sequence at which a proposed upgrade becomes executable (Instance storage).
     UpgradeUnlockLedger,
+    /// Next distribution ID counter (Instance storage, Distributor).
+    NextDistributionId,
+    /// Protocol fee percentage in basis points (Instance storage, Distributor).
+    ProtocolFeePercent,
+    /// Address to receive protocol fees (Instance storage, Distributor).
+    ProtocolFeeAddress,
+    /// A distribution record, keyed by distribution ID (Persistent storage, Distributor).
+    Distribution(u32),
+    /// Whether a user has claimed from a distribution (Persistent storage, Distributor).
+    /// Key: (distribution_id, claimant_address).
+    Claimed(u32, Address),
 }
 
 // ---------------------------------------------------------------------------

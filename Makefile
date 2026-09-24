@@ -10,6 +10,7 @@ build:
 	stellar contract build --package stream-nft
 	stellar contract build --package paymaster
 	stellar contract build --package router
+	stellar contract build --package distributor
 	@echo ""
 	@echo "Built WASM artifacts:"
 	@ls -lh target/wasm32v1-none/release/*.wasm 2>/dev/null || echo "  (none found)"

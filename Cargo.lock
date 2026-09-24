@@ -492,6 +492,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "distributor"
+version = "0.0.0"
+dependencies = [
+ "shared",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

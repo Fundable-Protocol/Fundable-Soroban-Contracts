@@ -255,3 +255,53 @@ pub fn emit_router_initialized(
         ),
     );
 }
+
+// ---------------------------------------------------------------------------
+// Distributor Events
+// ---------------------------------------------------------------------------
+
+/// Emit when a new Merkle distribution is created.
+pub fn emit_distribution_created(
+    env: &Env,
+    distribution_id: u32,
+    admin: &Address,
+    token: &Address,
+    total_amount: i128,
+    deadline: u64,
+) {
+    let topics = (Symbol::new(env, "distribution_created"), distribution_id);
+    let data = (admin.clone(), token.clone(), total_amount, deadline);
+    env.events().publish(topics, data);
+}
+
+/// Emit when a user successfully claims tokens from a distribution.
+pub fn emit_claim(
+    env: &Env,
+    distribution_id: u32,
+    claimant: &Address,
+    amount: i128,
+) {
+    let topics = (Symbol::new(env, "claim"), distribution_id);
+    let data = (claimant.clone(), amount);
+    env.events().publish(topics, data);
+}
+
+/// Emit when a distribution is cancelled by its admin.
+pub fn emit_distribution_cancelled(
+    env: &Env,
+    distribution_id: u32,
+    admin: &Address,
+    remaining_amount: i128,
+) {
+    let topics = (Symbol::new(env, "distribution_cancelled"), distribution_id);
+    let data = (admin.clone(), remaining_amount);
+    env.events().publish(topics, data);
+}
+
+/// Emit when protocol fee settings are changed.
+pub fn emit_fee_updated(env: &Env, admin: &Address, fee_percent: u32) {
+    let topics = (Symbol::new(env, "fee_updated"),);
+    let data = (admin.clone(), fee_percent);
+    env.events().publish(topics, data);
+}
+

@@ -205,3 +205,33 @@ pub struct CreateLockupParams {
     /// Whether the sender can cancel the stream.
     pub cancelable: bool,
 }
+
+// ---------------------------------------------------------------------------
+// Distributor (Merkle Claim)
+// ---------------------------------------------------------------------------
+
+/// A distribution record for the Merkle Claim distributor.
+///
+/// The admin deposits tokens and publishes a Merkle root. Users prove
+/// their eligibility via a Merkle proof and call `claim()`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DistributionRecord {
+    /// Admin who created this distribution.
+    pub admin: Address,
+    /// Token contract address being distributed.
+    pub token: Address,
+    /// Merkle root of the recipient list (keccak256 of leaves).
+    pub merkle_root: soroban_sdk::BytesN<32>,
+    /// Total amount deposited into this distribution.
+    pub total_amount: i128,
+    /// Amount already claimed by users.
+    pub claimed_amount: i128,
+    /// Unix timestamp after which no more claims can be made (0 = no deadline).
+    pub deadline: u64,
+    /// Whether this distribution has been cancelled by the admin.
+    pub is_cancelled: bool,
+    /// A unique reference identifier for this distribution (e.g. campaign name).
+    pub unique_ref: soroban_sdk::Bytes,
+}
+

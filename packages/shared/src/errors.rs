@@ -180,3 +180,46 @@ pub enum RouterError {
     /// A required contract address is invalid (zero/unset).
     InvalidContractAddress = 305,
 }
+
+// ---------------------------------------------------------------------------
+// Distributor Contract Errors
+// ---------------------------------------------------------------------------
+
+/// Errors emitted by the Distributor (Merkle Claim) contract.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum DistributorError {
+    /// Contract already initialized.
+    AlreadyInitialized = 401,
+    /// Contract not yet initialized.
+    NotInitialized = 402,
+    /// Caller is not authorized.
+    Unauthorized = 403,
+    /// Distribution ID does not exist.
+    DistributionNotFound = 404,
+    /// Merkle proof verification failed.
+    InvalidProof = 405,
+    /// Caller has already claimed from this distribution.
+    AlreadyClaimed = 406,
+    /// Distribution has been cancelled and is no longer claimable.
+    DistributionCancelled = 407,
+    /// Distribution has expired (past its deadline).
+    DistributionExpired = 408,
+    /// Deposit amount must be > 0.
+    AmountZero = 409,
+    /// Protocol fee exceeds maximum allowed (10000 basis points).
+    InvalidFeePercent = 410,
+    /// Protocol fee address is not set.
+    FeeAddressNotSet = 411,
+    /// Checked arithmetic operation failed (overflow/underflow).
+    ArithmeticError = 412,
+    /// No admin transfer pending to accept.
+    NoAdminTransferPending = 413,
+    /// Upgrade is timelocked and cannot be executed yet.
+    UpgradeTimelocked = 414,
+    /// No upgrade has been proposed.
+    NoUpgradeProposed = 415,
+    /// A claim would exceed the amount deposited for the distribution.
+    DistributionExhausted = 416,
+}
